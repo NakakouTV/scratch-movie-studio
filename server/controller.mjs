@@ -62,6 +62,7 @@ export class EditorController {
   key(id) {return `${this.target}\0${id}`;}
   resolve(id) {return this.aliases.get(this.key(id))||id;}
   async load(buffer) {
+    const {project:source}=await readSb3(buffer);
     this.aliases.clear();this.procedures.clear();this.variableRefs.clear();this.broadcastNames.clear();this.callArgs=new Map();
     await this.page.evaluate(b=>studio.load(b),buffer.toString('base64'));
     await this.page.waitForFunction(()=>studio.vm.runtime.targets.length>0&&studio.workspace);
@@ -69,6 +70,16 @@ export class EditorController {
     this.target=await this.page.evaluate(()=>studio.vm.editingTarget.getName());
     const ids=await this.page.evaluate(()=>studio.vm.runtime.targets.flatMap(t=>Object.keys(t.variables)));
     for(const id of ids)this.variableRefs.set(id,id);
+    const bindings=source.targets.flatMap(t=>Object.entries(t.blocks||{}).flatMap(([id,b])=>[
+      {target:t.name,isStage:!!t.isStage,sourceId:id,id},
+      ...Object.entries(b.inputs||{}).filter(([,v])=>Array.isArray(v[1])&&[12,13].includes(v[1][0])).map(([input])=>({target:t.name,isStage:!!t.isStage,sourceId:`${id}::${input}`,parent:id,input}))
+    ]));
+    const loaded=await this.page.evaluate(bindings=>bindings.flatMap(b=>{
+      const t=studio.vm.runtime.targets.find(t=>t.isOriginal&&t.isStage===b.isStage&&t.getName()===b.target);
+      const id=b.parent?t?.blocks.getBlock(b.parent)?.inputs?.[b.input]?.block:b.id;
+      return id&&t?.blocks.getBlock(id)?[{target:b.target,sourceId:b.sourceId,id}]:[];
+    }),bindings);
+    for(const b of loaded)this.aliases.set(`${b.target}\0${b.sourceId}`,b.id);
     await this.configureView({minScale:this.minScale});
   }
   async configureView({minScale=this.minScale}={}) {
@@ -83,7 +94,15 @@ export class EditorController {
       const w=studio.workspace,f=w.getFlyout().getWorkspace(),item=w.getToolbox().getSelectedItem();
       return {target:studio.vm.editingTarget.getName(),isStage:studio.vm.editingTarget.isStage,scale:w.scale,x:w.scrollX,y:w.scrollY,category:item?.toolboxItemDef_?.toolboxitemid,flyoutY:f.scrollY,extensions:[...studio.vm.extensionManager._loadedExtensions.keys()]};
     });
+    // SB3 stores input variable/list reporters inline without their runtime ID.
+    // Remember the socket so aliases can follow the new ID after deserialization.
+    const reporters=await this.page.evaluate(()=>studio.vm.runtime.targets.filter(t=>t.isOriginal).flatMap(t=>
+      Object.values(t.blocks._blocks).filter(b=>b.parent&&['data_variable','data_listcontents'].includes(b.opcode)).flatMap(b=>{
+        const input=Object.entries(t.blocks.getBlock(b.parent)?.inputs||{}).find(([,v])=>v.block===b.id)?.[0];
+        return input?[{target:t.getName(),id:b.id,parent:b.parent,input}]:[];
+      })));
     return {version:1,editorVersion:'15.1.1',view,tab:this.activeTab,minScale:this.minScale,position:this.position,
+      reporters,
       maps:Object.fromEntries(['aliases','procedures','variableRefs','broadcastNames','callArgs'].map(k=>[k,[...(this[k]||new Map())]]))};
   }
   async restoreCheckpoint(buffer,state) {
@@ -100,14 +119,34 @@ export class EditorController {
     },state.view.extensions||[]);
     await this.pause(200);
     await this.selectTarget(state.view.target,state.view.isStage);
+    const reporterIds=new Map((state.reporters||[]).map(b=>[`${b.target}\0${b.id}`,this.aliases.get(`${b.target}\0${b.parent}::${b.input}`)]));
     for(const [key,entries] of Object.entries(state.maps))if(['aliases','procedures','variableRefs','broadcastNames','callArgs'].includes(key))this[key]=new Map(entries);
+    for(const [key,id] of this.aliases){
+      const target=key.slice(0,key.indexOf('\0')),restored=reporterIds.get(`${target}\0${id}`);
+      if(restored)this.aliases.set(key,restored);
+    }
     await this.configureView({minScale:state.minScale});
     if(state.view.category)await this.category(state.view.category);
     await this.page.evaluate(v=>{const w=studio.workspace;w.setScale(v.scale);w.scroll(v.x,v.y);const f=w.getFlyout().getWorkspace();f.scroll(f.scrollX,v.flyoutY);},state.view);
     await this.selectTab(state.tab||'code');
     await this.move(state.position.x,state.position.y,0);
   }
-  async state() {return this.page.evaluate(()=>studio.state());}
+  async state() {
+    const state=await this.page.evaluate(()=>studio.state());
+    const reverse=new Map();
+    for(const [key,id] of this.aliases){const prefix=`${state.target}\0`;if(key.startsWith(prefix)){const values=reverse.get(id)||[];values.push(key.slice(prefix.length));reverse.set(id,values);}}
+    for(const block of state.blocks||[]){
+      block.sourceIds=reverse.get(block.id)||[];block.sourceId=block.sourceIds[0]??null;
+      block.parentSourceId=reverse.get(block.parent)?.[0]??null;block.nextSourceId=reverse.get(block.next)?.[0]??null;
+      const args=block.sourceIds.map(id=>this.callArgs?.get(`${state.target}\0${id}`)).find(Boolean);
+      for(const input of block.inputs){
+        input.sourceBlockId=reverse.get(input.blockId)?.[0]??null;
+        const index=args?.args.indexOf(input.name)??-1;
+        input.sourceName=index<0?input.name:args.originalArgs[index];
+      }
+    }
+    return state;
+  }
   async setAssetSource(buffer) {this.assetSource=await readSb3(buffer);}
   async selectTab(tab) {
     const index={code:0,costumes:1,sounds:2}[tab];

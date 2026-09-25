@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {EditorController} from './controller.mjs';
 import {Recorder,runProcess} from './recorder.mjs';
 import {readSb3,blankProject,buildPlan} from './project.mjs';
+import {projectStructure} from './structure.mjs';
 
 import {JobRunner,publicJob,activeJob} from './jobs.mjs';
 import {normalizeScenes} from './scenes.mjs';
@@ -15,6 +16,7 @@ export async function apiRouter(root,baseURL) {
   const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res)).catch(next);
   const session=id=>{const s=sessions.get(id);if(!s)throw new Error('セッションがありません。');return s;};
   const project=id=>{const p=projects.get(id);if(!p)throw new Error('プロジェクトがありません。もう一度読み込んでください。');return p;};
+  const sessionState=async s=>({...await s.controller.state(),busy:s.busy,recording:!!s.recorder?.accepting,currentAction:s.currentAction??null,lastAction:s.lastAction??null});
   const runner=new JobRunner(root,baseURL,jobs);await runner.hydrate();
   router.get('/capabilities',(req,res)=>res.json({version:'0.3.0',editorVersion:'15.1.1',operations:OPERATIONS,extensions:['pen'],video:{width:1920,height:1080,fps:30,format:'mp4'},unsupported:['paint drawing automation','sound waveform editing','cloud sync','hardware extensions'],note:'背景・コスチューム・音は公式のアップロード操作で追加します。スプライト自体は撮影前に準備します。'}));
   router.get('/samples',asyncRoute(async(req,res)=>res.json((await fs.readdir(root)).filter(n=>n.endsWith('.sb3')))));
@@ -32,22 +34,34 @@ export async function apiRouter(root,baseURL) {
     res.json(await addProject(await fs.readFile(path.join(root,name)),name));
   }));
   router.get('/projects/:id/plan',(req,res)=>res.json(project(req.params.id).plan));
+  router.get('/projects/:id/structure',(req,res)=>res.json(projectStructure(project(req.params.id).json)));
   router.post('/sessions',asyncRoute(async(req,res)=>{
     if([...jobs.values()].some(j=>['running','encoding'].includes(j.status)))throw new Error('動画を制作中です。完了後にセッションを作成してください。');
     const p=project(req.body.projectId),id=randomUUID();
     const controller=await new EditorController(baseURL,{headed:!!req.body.headed,timing:req.body.timing,minScale:req.body.minScale}).open();
     try {await controller.setAssetSource(p.buffer);await controller.load(p.buffer);if(req.body.blank)await controller.load(await blankProject(p.buffer,{assets:!!req.body.animateAssets}));}catch(e){await controller.close();throw e;}
-    sessions.set(id,{id,controller,busy:false,log:[],directory:path.join(root,'outputs',id)});
-    res.json({id,state:await controller.state()});
+    const s={id,controller,busy:false,log:[],directory:path.join(root,'outputs',id)};sessions.set(id,s);
+    res.json({id,state:await sessionState(s)});
   }));
-  router.get('/sessions/:id',asyncRoute(async(req,res)=>res.json(await session(req.params.id).controller.state())));
+  router.get(['/sessions/:id','/sessions/:id/state'],asyncRoute(async(req,res)=>res.json(await sessionState(session(req.params.id)))));
   router.post('/sessions/:id/actions',asyncRoute(async(req,res)=>{
     const s=session(req.params.id);if(s.busy)throw new Error('このセッションは操作中です。');
     const actions=Array.isArray(req.body)?req.body:[req.body];
     if(actions.length>10000)throw new Error('操作数が多すぎます。');
     s.busy=true;
-    try {const results=[];for(const action of actions){const result=await s.controller.execute(action);results.push(result??null);s.log.push({action,result});}res.json({results});}
-    finally{s.busy=false;}
+    try {
+      const results=[];
+      for(const action of actions){
+        s.currentAction={sequence:s.log.length+1,action,startedAt:new Date().toISOString()};
+        try{
+          const result=await s.controller.execute(action);results.push(result??null);
+          s.lastAction={...s.currentAction,success:true,result:result??null,completedAt:new Date().toISOString()};
+        }catch(error){
+          s.lastAction={...s.currentAction,success:false,error:error.message,completedAt:new Date().toISOString()};throw error;
+        }finally{s.log.push(s.lastAction);s.currentAction=null;}
+      }
+      res.json({results});
+    }finally{s.busy=false;}
   }));
   router.get('/sessions/:id/screenshot',asyncRoute(async(req,res)=>res.type('image/jpeg').send(await session(req.params.id).controller.page.screenshot({type:'jpeg',quality:70}))));
   router.get('/sessions/:id/project.sb3',asyncRoute(async(req,res)=>res.type('application/octet-stream').attachment('project.sb3').send(await session(req.params.id).controller.save())));

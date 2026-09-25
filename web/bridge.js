@@ -83,9 +83,23 @@
       return btoa(binary);
     },
     state() {
-      return {ready: !!this.workspace, target: this.vm?.editingTarget?.getName(),
+      const gui=this.store?.getState().scratchGui,w=this.workspace,blocks=this.blocks;
+      const visible=el=>el&&el.getBoundingClientRect().width>0&&el.getBoundingClientRect().height>0&&getComputedStyle(el).visibility!=='hidden';
+      const dialog=[...document.querySelectorAll('[role="dialog"]')].find(visible);
+      const modalType=gui?.customProcedures?.active?'procedure':blocks?.state?.prompt?'prompt':Object.entries(gui?.modals||{}).find(([,value])=>value===true)?.[0]||null;
+      const fieldEditor=[...document.querySelectorAll('.blocklyWidgetDiv,.blocklyDropDownDiv')].some(visible);
+      return {ready: !!w, target: this.vm?.editingTarget?.getName(),
+        selectedTarget:{name:this.vm?.editingTarget?.getName(),isStage:!!this.vm?.editingTarget?.isStage},
+        selectedTab:['code','costumes','sounds'][gui?.editorTab?.activeTabIndex]??null,
+        workspace:w?{scale:w.scale,scrollX:w.scrollX,scrollY:w.scrollY,dragging:w.isDragging()}:null,
+        running:!!gui?.vmStatus?.running,
+        modal:modalType||dialog?{type:modalType||'dialog',label:dialog?.getAttribute('aria-label')||null}:null,
+        fieldEditorOpen:fieldEditor,
         targets: this.vm?.runtime.targets.filter(t => t.isOriginal).map(t => ({id:t.id,name:t.getName(),isStage:t.isStage})),
-        blocks: this.workspace?.getAllBlocks(false).map(b => ({id:b.id,type:b.type,text:b.toString(),x:b.getRelativeToSurfaceXY().x,y:b.getRelativeToSurfaceXY().y})),
+        blocks: w?.getAllBlocks(false).map(b => ({id:b.id,type:b.type,text:b.toString(),x:b.getRelativeToSurfaceXY().x,y:b.getRelativeToSurfaceXY().y,
+          parent:b.getParent()?.id??null,next:b.getNextBlock()?.id??null,shadow:b.isShadow(),
+          inputs:b.inputList.map(i=>({name:i.name,blockId:i.connection?.targetBlock()?.id??null})),
+          fields:Object.fromEntries(b.inputList.flatMap(i=>i.fieldRow).filter(f=>f.name).map(f=>[f.name,{value:f.getValue(),text:f.getText()}]))})),
         locale:this.store?.getState().locales.locale};
     }
   };

@@ -53,10 +53,12 @@ sb3に制作履歴はないため、構造から手順を生成します。定�
 
 ```
 POST /api/projects                       sb3バイナリを読み込む
+GET  /api/projects/:id/structure          元ID・接続関係・定義・変数を取得
 POST /api/jobs                           sb3再構築・録画を開始
 GET  /api/jobs/:id                        進捗、検証、成果物URL
 POST /api/sessions                       個別操作用のエディタを作成
 POST /api/sessions/:id/actions            編集操作を実行
+GET  /api/sessions/:id/state              現在の画面・ブロック・操作結果を取得
 POST /api/sessions/:id/recording/start     録画開始
 POST /api/sessions/:id/recording/stop      録画停止・MP4化
 GET  /api/sessions/:id/project.sb3         保存
@@ -66,6 +68,10 @@ GET  /api/capabilities                    対応状況
 CLI: `npm run render -- "project.sb3" 1`（先にサーバーを起動）。
 
 APIはlocalhost限定です。同時に複数の命令で同じエディタを操作しないようロックします。命令は完了後に結果を返します。動画生成はジョブIDを返し、進捗を別途取得します。
+
+構造APIは元のsb3のブロックIDと親子・次のブロック・入力の関係を保持します。対象を選択すると、そのIDで既存のブロック操作APIを呼べます。再構築時にも同じIDを `sourceId` に指定します。入力内の短縮形式の変数・リストには、制作手順と共通の `親ID::入力名` を割り当てます。IDは対象ごとの範囲で、別作品・外部編集後まで同じ対象を保証するものではありません。
+
+状態APIでは現在のタブ・倍率・スクロール・ダイアログ・実行中・操作中・録画中・最後の操作の成否を取得できます。ブロックの `id` はエディタ内部ID、`sourceId` は元のIDまたは指定した別名です。画面で手作業により追加したブロックなど、対応がない場合は `sourceId: null` になります。構造APIは読み込み元、状態APIは編集中の選択対象を返します。取得によって画面やカーソルは動きません。
 
 ## 初期版の制限
 
@@ -89,6 +95,7 @@ APIはlocalhost限定です。同時に複数の命令で同じエディタを�
 - `web/snap-target.js` APIドラッグ中だけ接続先を限定する版固定アダプター
 - `server/controller.mjs` マウス・入力・公式ダイアログ・ブロック接続API
 - `server/project.mjs` sb3解析、手順生成、プログラム比較
+- `server/structure.mjs` 元IDを保持した構造取得
 - `server/recorder.mjs` 画面フレームと時刻を記録し、FFmpegで30fpsに変換
 - `server/api.mjs` セッションと録画ジョブ
 - `vendor/package/` 公式エディタの配布物（ソース・ライセンスを含む）
@@ -98,7 +105,9 @@ APIはlocalhost限定です。同時に複数の命令で同じエディタを�
 - `node tests/full-project.mjs "project.sb3" result-name` 素材追加から全ブロック構築、完成比較、素材バイト列、実行時のモニター名を検証（結果は `test-results/full-projects/result-name/`）
 - `node tests/monitor-labels.mjs` スライダー・全体変数・ローカル変数・リストの名前と、実行中の表示切替・保存後の再表示を検証
 
-- `npm test` sb3解析・手順順序・差分検出のテスト
+- `npm test` sb3解析・手順順序・差分検出・場面分割・構造取得のテスト
+- `node tests/observation-api.mjs` 構造のIDによる操作、タブ・実行・操作中・録画・失敗結果の取得を検証
+- `node tests/checkpoint-state.mjs` ID対応・定義の引数・ダイアログ状態・途中保存後の復元を検証
 - `npm run test:integration` 元サンプルを公式エディタで再構築して比較（サーバー起動が必要）
 - `node tests/integration.mjs PEN動作確認.sb3` PEN・リスト・ローカル変数のテスト
 - `node tests/api-session.mjs` HTTP API経由の個別編集・真偽値引数・録画のテスト

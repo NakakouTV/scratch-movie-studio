@@ -6,7 +6,7 @@
   "description": "Official Scratch editor with animated authoring API and sb3 reconstruction recording",
   "scripts": {
     "start": "node server/index.mjs",
-    "test": "node --test tests/project.test.mjs",
+    "test": "node --test tests/project.test.mjs tests/scenes.test.mjs tests/structure.test.mjs",
     "test:integration": "node tests/integration.mjs",
     "setup": "node scripts/setup.mjs",
     "render": "node scripts/render.mjs"

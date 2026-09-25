@@ -74,6 +74,26 @@ POST /sessions/{id}/actions
 <tr><td>keyboard.type / keyboard.press</td><td>text、replace / key（例: Enter、Control+A）</td></tr>
 <tr><td>project.start / project.stop / wait</td><td>待機時 ms</td></tr>
 </tbody></table>
+<h2>構造と元のブロックID</h2>
+<p><code>GET /projects/{id}/structure</code> は読み込み元のsb3を返す参照APIです。<code>version: 1</code>、<code>idScope: "target"</code>、<code>extensions</code>、<code>targets</code> を返します。編集中の状態は下記の状態APIから取得してください。</p>
+<p>各対象には <code>name / isStage / selectAction</code>、スクリプトの入口 <code>scripts</code>、全ブロック <code>blocks</code>、定義と呼び出しの関係 <code>procedures</code>、<code>variables / lists / broadcasts / costumes / sounds</code> が含まれます。ブロックには元の <code>id / opcode / category / parent / next / fields / inputs / mutation</code> が含まれます。入力値は <code>kind: block / literal / reference</code> で区別し、上書きされて隠れた既定値も <code>fallback</code> に保持します。変数参照はID・所有対象・global/localを区別します。</p>
+<pre>const structure = await fetch(base + `/projects/${project.id}/structure`).then(r =&gt; r.json());
+const target = structure.targets.find(t =&gt; !t.isStage &amp;&amp; t.scripts.length);
+// POST /sessions/{id}/actions に送る例（そのブロックが既に存在する場合）
+const actions = [target.selectAction,
+  {type: 'workspace.focus', block: target.scripts[0].rootBlockId}];</pre>
+<p>IDは対象ごとの範囲です。対象を選択してから操作してください。同じsb3から空の状態に再構築する場合も、<code>block.add.sourceId</code> 等にこのIDを使います。入力内の短縮形式の変数・リストは <code>親ID::入力名</code>（<code>synthetic: true</code>）で、標準制作手順と共通です。定数などのshadowは親の <code>block.input</code> / <code>block.field</code> と入力名で編集してください。別作品や外部で編集し直したsb3までIDの一致を保証するものではありません。</p>
+<h2>現在の状態と操作結果</h2>
+<p><code>GET /sessions/{id}/state</code>（従来の <code>GET /sessions/{id}</code> も同じ内容）は、画面を動かさずに現在の状態を返します。</p>
+<table><tbody>
+<tr><td>selectedTarget / selectedTab</td><td>対象名・isStage、code / costumes / sounds</td></tr>
+<tr><td>workspace</td><td>scale、scrollX、scrollY、dragging</td></tr>
+<tr><td>modal / fieldEditorOpen</td><td>表示中のダイアログのtype・label（なければnull）、入力欄やドロップダウンが開いているか</td></tr>
+<tr><td>running / busy / recording</td><td>Scratch実行中、API編集操作中、録画フレーム収集中。MP4変換中はrecordingがfalseになります。</td></tr>
+<tr><td>currentAction / lastAction</td><td>実行中の命令／最後に完了した命令。sequence、action、startedAt。lastActionにはcompletedAt、successとresultまたはerror。まだなければnull。</td></tr>
+<tr><td>blocks</td><td>選択対象のブロック。内部id、対応するsourceId・sourceIds、parent・nextとそれぞれのSourceId、fields、inputs。inputsのsourceNameは定義呼び出しの元引数ID、sourceBlockIdは接続先の元ID。</td></tr>
+</tbody></table>
+<p>元のsb3から読み込んだブロック、またはAPIで別名を指定して作ったブロックに元IDを対応付けます。画面で手作業により追加したブロックなど、対応がない場合は <code>sourceId: null</code> です。ダイアログのlabelも取得できない場合はnullになります。複数操作の途中で失敗すると後続は実行せず、失敗した命令をlastActionに残します。部分的に画面が変わっている可能性があるため、状態を確認してから続行してください。状態取得はタブ切替やフォーカス移動を行わず、操作中に取得した状態は途中の状態です。</p>
 <h2>素材の追加</h2><p>セッション作成時に <code>blank: true, animateAssets: true</code> を指定すると、透明な準備用コスチューム1枚から開始します。読み込んだsb3を素材元として保持し、最初の画像追加後に準備用コスチュームを画面上で削除します。スプライトを選び、<code>{"type":"costume.add","assetIndex":0}</code> または <code>{"type":"sound.add","assetIndex":0}</code> を実行します。OSのファイル選択画面は収録せず、ファイルは自動選択します。</p>
 <h2>特殊な設定欄</h2><p><code>block.input</code> と <code>block.field</code> は同じ入力判定を使います。色は <code>#rrggbb</code> を指定すると色選択画面のスライダーを操作し、元のRGB値を保持します。角度・数値・文字は入力エディタ、キー・対象・素材・ペンの色特性などは選択メニューで設定します。入力後の値も確認します。</p>
 <h2>メッセージ名</h2><p>実際に使う送信・受信ブロックを置き、その <code>block.field</code> に <code>field: "BROADCAST_OPTION", value: "開始"</code> を指定します。送信ブロックには <code>input: "BROADCAST_INPUT"</code> も指定します。存在しない名前は公式ダイアログで作成します。</p>
