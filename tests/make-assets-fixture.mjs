@@ -1,0 +1,15 @@
+import fs from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {readSb3} from '../server/project.mjs';
+const {zip,project}=await readSb3(await fs.readFile('PEN動作確認.sb3'));
+const stage=project.targets[0],sprite=project.targets[1];
+const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAJUlEQVR4nGP4v4DhPy0xw6gFoxaMWjBqwagFoxaMWjBqwdCwAAC40OPM018KMgAAAABJRU5ErkJggg==','base64');
+const id=createHash('md5').update(png).digest('hex');zip.file(id+'.png',png);
+sprite.costumes.push({assetId:id,md5ext:id+'.png',name:'画像.2 日本語',dataFormat:'png',bitmapResolution:2,rotationCenterX:7,rotationCenterY:-3});
+sprite.costumes.push({...sprite.costumes[0],name:'同じ画像の別名',rotationCenterX:2,rotationCenterY:18});
+sprite.currentCostume=1;
+stage.costumes.push({...stage.costumes[0],name:'背景.2'});stage.currentCostume=1;
+stage.sounds=[{...sprite.sounds[0],name:'ステージの音'}];
+sprite.sounds.push({...sprite.sounds[0],name:'確認音.2'});
+zip.file('project.json',JSON.stringify(project));
+await fs.writeFile('test-results/assets-multiple.sb3',await zip.generateAsync({type:'nodebuffer'}));

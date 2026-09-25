@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Scratch Movie Studio</title><link rel="stylesheet" href="/studio.css"></head>
+<body>
+<header><a class="brand" href="/"><span class="brand-icon">S<span>▶</span></span><span>Scratch <b>Movie Studio</b><small>ブロックを組み立てる過程を、動画に。</small></span></a><div class="header-right"><span class="status-dot"></span>LOCAL STUDIO <a href="/api.html" target="_blank">API リファレンス ↗</a></div></header>
+<main><aside>
+<div class="step-label">01 · SOURCE</div><h2>プロジェクト</h2>
+<label class="upload" id="dropzone"><span class="upload-icon">＋</span><strong>sb3ファイルを読み込む</strong><span>ここにドロップ、またはクリック</span><input id="file" type="file" accept=".sb3"></label>
+<div class="sample-row"><select id="samples" aria-label="サンプルファイル"><option value="">フォルダ内のサンプル</option></select><button id="loadSample" class="icon-button" title="サンプルを読み込む">↗</button></div>
+<div id="projectInfo" class="source-info muted">背景・コスチューム・音の追加から、制作過程を再現します。</div>
+<hr><div class="step-label">02 · RECORDING</div><h2>制作設定</h2>
+<div class="format"><span>1920 × 1080</span><span>30 fps</span><span>MP4</span></div>
+<label class="setting">操作の速度<select id="speed"><option value="0.5">ゆっくり · 0.5×</option><option value="1" selected>標準 · 1×</option><option value="2">速め · 2×</option><option value="4">確認用 · 4×</option></select></label>
+<label class="setting">完成後の実演<select id="demoSeconds"><option value="0">なし</option><option value="3" selected>3秒</option><option value="5">5秒</option><option value="10">10秒</option></select></label>
+<label class="setting">ブロックの倍率下限<select id="minScale"><option value="0.8" selected>読みやすく · 80%</option><option value="1">大きく · 100%</option><option value="0.3">広く表示 · 30%</option></select></label>
+<label class="check"><input id="record" type="checkbox" checked> MP4を生成する</label>
+<label class="setting">動画の分け方<select id="outputMode"><option value="both" selected>全体＋場面別</option><option value="scenes">場面別のみ</option><option value="full">全体のみ</option></select></label>
+<p class="muted small">日本語 / カーソル表示 / クリック波紋なし<br>画像・音のアップロード、変数・定義の作成も収録します。</p>
+<button id="build" class="primary" disabled>▶ 制作アニメーションを生成</button><button id="pause" class="secondary" hidden>途中保存して一時停止</button><button id="resume" class="primary" hidden>保存地点から再開</button><button id="cancel" class="secondary" hidden>制作を中止</button>
+<p id="checkpoint" class="muted small">25操作ごと・対象切替・素材追加後に自動保存します。</p>
+<label class="setting">制作履歴<select id="history"><option value="">制作を選択</option></select></label>
+<p class="notice" id="error" role="alert" hidden></p>
+</aside>
+<section class="workspace">
+<div class="workspace-heading"><div><div class="step-label">03 · PREVIEW</div><h1>制作の様子</h1></div><span class="pill" id="state">待機中</span></div>
+<div class="preview" id="preview"><div id="placeholder"><div class="block-art"><i>⚑ が押されたとき</i><i>10 歩動かす</i><i>90 度回す</i></div><h3>プロジェクトから、制作過程を再現</h3><p>カテゴリの選択、ドラッグ、文字入力まで。<br>公式Scratchエディタ上でプログラムを組み立てます。</p></div><img id="live" alt="Scratchエディタのライブプレビュー" hidden><video id="video" controls hidden></video></div>
+<div class="progress-area"><div><strong id="current">sb3を読み込んで開始してください</strong><span id="count"></span></div><progress id="progress" value="0" max="1"></progress></div>
+<div id="artifacts" class="artifacts"></div>
+<section class="panel scene-panel" id="scenePanel" hidden><div class="panel-title"><h2>出力する場面</h2><span id="sceneCount" class="muted"></span></div><p class="muted small">名前を編集し、必要な場面を選べます。選択を外した場面も組み立て操作は実行します。完成後の実演は、設定した秒数で別の動画になります。</p><div id="sceneList"></div></section>
+<div class="bottom-grid"><section class="panel"><div class="panel-title"><h2>制作手順</h2><a id="downloadPlan" hidden>JSONを保存 ↓</a></div><p id="planSummary" class="muted">再構築する操作をここで確認できます。</p><ol id="plan"></ol></section><section class="panel"><div class="panel-title"><h2>検証と記録</h2><span class="subtle">AUTOMATION API</span></div><p id="verification" class="muted">完成後にブロック接続、定数、変数、素材を比較します。</p><div id="warnings"></div><p class="muted small">元の制作履歴ではなく、sb3の構造から生成した順序で再構築します。操作APIは外部のスクリプトからも利用できます。</p><a class="doc-link" href="/api.html" target="_blank">操作APIの使い方を開く →</a></section></div>
+</section></main><footer>Official Scratch editor 15.1.1 · ローカルで処理 · AIエージェントは含みません <span>Scratch Foundationとは独立したツールです。</span></footer>
+<script type="module" src="/app.js"></script></body></html>

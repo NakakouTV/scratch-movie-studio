@@ -1,0 +1,20 @@
+node_modules/
+.npm-cache/
+vendor/
+*.tgz
+outputs/
+.runtime/
+test-results/
+
+# Local projects, credentials and machine-specific files
+*.sb3
+!PEN動作確認.sb3
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+.DS_Store
+Thumbs.db
+/r.text()).then(console.log)

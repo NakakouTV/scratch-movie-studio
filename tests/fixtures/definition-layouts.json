@@ -1,0 +1,150 @@
+[
+  [
+    {
+      "type": "procedure.create",
+      "sourceId": "definition-0",
+      "prototypeId": "prototype-0",
+      "mutation": {
+        "tagName": "mutation",
+        "children": [],
+        "proccode": "buffer描画",
+        "argumentids": "[]",
+        "argumentnames": "[]",
+        "argumentdefaults": "[]",
+        "warp": "true"
+      },
+      "x": 3019,
+      "y": -779
+    },
+    {
+      "type": "procedure.create",
+      "sourceId": "definition-1",
+      "prototypeId": "prototype-1",
+      "mutation": {
+        "tagName": "mutation",
+        "children": [],
+        "proccode": "初期処理",
+        "argumentids": "[]",
+        "argumentnames": "[]",
+        "argumentdefaults": "[]",
+        "warp": "true"
+      },
+      "x": 140,
+      "y": 420
+    },
+    {
+      "type": "procedure.create",
+      "sourceId": "definition-2",
+      "prototypeId": "prototype-2",
+      "mutation": {
+        "tagName": "mutation",
+        "children": [],
+        "proccode": "処理",
+        "argumentids": "[]",
+        "argumentnames": "[]",
+        "argumentdefaults": "[]",
+        "warp": "true"
+      },
+      "x": 2659,
+      "y": 460
+    },
+    {
+      "type": "procedure.create",
+      "sourceId": "definition-3",
+      "prototypeId": "prototype-3",
+      "mutation": {
+        "tagName": "mutation",
+        "children": [],
+        "proccode": "draw grid %s (n-1)",
+        "argumentids": "[\"2Wdcv)Ln,*^y[%.kz/^H\"]",
+        "argumentnames": "[\"num\"]",
+        "argumentdefaults": "[\"\"]",
+        "warp": "true"
+      },
+      "x": 3260,
+      "y": 620
+    },
+    {
+      "type": "procedure.create",
+      "sourceId": "definition-4",
+      "prototypeId": "prototype-4",
+      "mutation": {
+        "tagName": "mutation",
+        "children": [],
+        "proccode": "edit buffer",
+        "argumentids": "[]",
+        "argumentnames": "[]",
+        "argumentdefaults": "[]",
+        "warp": "true"
+      },
+      "x": 2180,
+      "y": 1620
+    }
+  ],
+  [
+    {
+      "type": "procedure.create",
+      "sourceId": "definition-0",
+      "prototypeId": "prototype-0",
+      "mutation": {
+        "tagName": "mutation",
+        "children": [],
+        "proccode": "円形ブラシで消す",
+        "argumentids": "[]",
+        "argumentnames": "[]",
+        "argumentdefaults": "[]",
+        "warp": "true"
+      },
+      "x": 1513,
+      "y": -24
+    },
+    {
+      "type": "procedure.create",
+      "sourceId": "definition-1",
+      "prototypeId": "prototype-1",
+      "mutation": {
+        "tagName": "mutation",
+        "children": [],
+        "proccode": "画面を初期化",
+        "argumentids": "[]",
+        "argumentnames": "[]",
+        "argumentdefaults": "[]",
+        "warp": "true"
+      },
+      "x": 969,
+      "y": 1024
+    },
+    {
+      "type": "procedure.create",
+      "sourceId": "definition-2",
+      "prototypeId": "prototype-2",
+      "mutation": {
+        "tagName": "mutation",
+        "children": [],
+        "proccode": "可視範囲だけ高速描画",
+        "argumentids": "[]",
+        "argumentnames": "[]",
+        "argumentdefaults": "[]",
+        "warp": "true"
+      },
+      "x": 2804,
+      "y": 1564
+    },
+    {
+      "type": "procedure.create",
+      "sourceId": "definition-3",
+      "prototypeId": "prototype-3",
+      "mutation": {
+        "tagName": "mutation",
+        "children": [],
+        "proccode": "16分木で描画",
+        "argumentids": "[]",
+        "argumentnames": "[]",
+        "argumentdefaults": "[]",
+        "warp": "true"
+      },
+      "x": 421,
+      "y": 1725
+    }
+  ]
+]

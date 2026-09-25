@@ -1,0 +1,33 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {EditorController} from '../server/controller.mjs';
+import {blankProject,readSb3,buildPlan} from '../server/project.mjs';
+const c=await new EditorController('http://127.0.0.1:8601',{timing:{move:40,drag:150,type:1,pause:40}}).open();
+try{
+ const file=(await fs.readdir('.')).find(n=>n.startsWith('Fast ')&&n.endsWith('.sb3')),buffer=await fs.readFile(file),{project}=await readSb3(buffer),plan=buildPlan(project);
+ await c.load(buffer);await c.load(await blankProject(buffer));
+ for(const a of plan.actions.filter(a=>['target.select','variable.create'].includes(a.type)))await c.execute(a);
+ await c.execute({type:'project.start'});await c.pause(300);
+ const data=await c.page.evaluate(()=>Array.from(studio.vm.runtime._monitorState.values()).map(m=>({id:m.get('id'),params:m.get('params'),plain:!!m.get('params')?.VARIABLE,mode:m.get('mode')})));
+ console.log(JSON.stringify(data));
+ const labels=await c.page.locator('[class*="monitor_label"]').allTextContents();console.log('labels',JSON.stringify(labels));
+ for(const a of plan.actions.filter(a=>a.type==='variable.create'&&a.monitor?.visible&&a.monitor.mode!=='large'))assert.ok(labels.some(l=>l.includes(a.name)),`missing label ${a.name}`);
+ await c.page.screenshot({path:'test-results/monitor-labels.png'});
+ await c.execute({type:'project.stop'});
+ await c.execute({type:'variable.create',sourceId:'hidden-global',name:'実行時に表示',scope:'global',value:42,monitor:{visible:false,mode:'default',params:{VARIABLE:'実行時に表示'}}});
+ await c.execute({type:'variable.create',sourceId:'local-labelled',name:'ローカル名',scope:'local',value:7,monitor:{visible:true,mode:'default',params:{VARIABLE:'ローカル名'}}});
+ await c.execute({type:'variable.create',sourceId:'list-labelled',name:'項目リスト',kind:'list',scope:'global',value:['a','b'],monitor:{visible:true,mode:'list',params:{LIST:'項目リスト'}}});
+ await c.execute({type:'block.add',sourceId:'flag',opcode:'event_whenflagclicked',place:{x:100,y:100}});
+ await c.execute({type:'block.add',sourceId:'show',opcode:'data_showvariable',fields:{VARIABLE:['実行時に表示','hidden-global']},place:{after:'flag'}});
+ await c.execute({type:'block.field',block:'show',field:'VARIABLE',value:'実行時に表示',referenceId:'hidden-global'});
+ await c.execute({type:'project.start'});await c.pause(300);
+ const text=await c.page.locator('[class*="monitor_label"], [class*="monitor_list-header"]').allTextContents();
+ for(const name of ['実行時に表示','ローカル名','項目リスト'])assert.ok(text.some(t=>t.includes(name)),`missing label ${name}`);
+ const monitors=await c.page.evaluate(()=>Array.from(studio.vm.runtime._monitorState.values()).map(m=>({opcode:m.get('opcode'),params:m.get('params')})));
+ for(const m of monitors)assert.ok(m.params[m.opcode==='data_listcontents'?'LIST':'VARIABLE']);
+ await c.execute({type:'project.stop'});const saved=await c.save();await c.load(saved);await c.pause(300);
+ const restored=await c.page.locator('[class*="monitor_label"], [class*="monitor_list-header"]').allTextContents();
+ for(const name of ['実行時に表示','ローカル名','項目リスト'])assert.ok(restored.some(t=>t.includes(name)),`missing saved label ${name}`);
+ await c.page.screenshot({path:'test-results/monitor-labels-restored.png'});
+ console.log('monitor labels PASS: sliders, global/local/list, runtime show and save/reload');
+}finally{await c.close();}

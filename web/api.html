@@ -1,0 +1,87 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>操作API · Scratch Movie Studio</title><link rel="stylesheet" href="/studio.css"><style>article{max-width:1000px;margin:40px auto;padding:36px;background:white;border:1px solid #e3e8f0;border-radius:14px}pre{background:#f3f5fa;padding:20px;overflow:auto;border-radius:8px;font:13px/1.7 Consolas,monospace}table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;border-bottom:1px solid #e3e8f0;padding:12px}code{font-family:Consolas,monospace}h2{margin-top:28px}p{color:#64728a}article a{font-size:13px}</style></head><body><header><a class="brand" href="/">← Scratch Movie Studio</a><span class="subtle">LOCAL HTTP API · v0.3</span></header><article><h1>アニメーション操作API</h1><p>Base URL: <code>http://127.0.0.1:8601/api</code>。エージェントは含まれません。HTTPから公式エディタを操作できます。命令の戻り値は編集完了後に返ります。</p>
+<h2>sb3から動画を作る</h2><pre>// JavaScript / Node.js 18+
+const project = await fetch(base + '/projects', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/octet-stream'},
+  body: sb3Bytes
+}).then(r =&gt; r.json());
+
+const job = await fetch(base + '/jobs', {
+  method: 'POST', headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({projectId: project.id, speed: 1, demoSeconds: 3})
+}).then(r =&gt; r.json());
+// GET /jobs/{id} で進捗と成果物URLを取得</pre>
+<p>標準では背景・コスチューム・音の追加も録画します。素材を準備済みにする場合は <code>animateAssets: false</code> をジョブに指定します。</p>
+<h2>場面別の動画出力</h2>
+<p>ジョブ作成時の <code>outputMode</code> に <code>full</code>（全体のみ・APIの初期値）、<code>scenes</code>（場面別のみ）、<code>both</code>（両方）を指定します。管理画面の初期値は「全体＋場面別」です。MP4生成を無効にした場合、動画は出力しません。</p>
+<p>自動手順の <code>plan.scenes</code> は、対象ごとの素材追加、変数・リスト、定義作成、各スクリプトの組み立てに分かれます。定義は呼び出しより先に作成するため、「定義の作成」と「定義の中の処理」は別の場面です。完成後の実演は <code>demoSeconds &gt; 0</code> のとき最後の場面になります。</p>
+<pre>POST /jobs
+{
+  "projectId": "読み込んだID",
+  "outputMode": "both",
+  "demoSeconds": 3,
+  "scenes": [
+    {"title": "素材の準備", "from": 1, "to": 10, "enabled": false},
+    {"title": "プログラムを作る", "from": 11, "to": 31, "enabled": true}
+  ]
+}</pre>
+<p><code>scenes</code> を省略すると自動分割を使います。指定する場合、<code>from / to</code> は1始まり・両端を含む操作番号で、1操作目から最後までを重複・隙間なく指定します（上の例は31操作の手順用）。名前は200文字以内。最大1000場面です。<code>enabled: false</code> はその場面の個別MP4だけを省略します。後続に必要な変数・素材・定義をそろえるため、すべての制作操作を順に実行し、全体動画には全操作を収録します。</p>
+<p>完成後の成果物には <code>scenes/001.mp4</code> などの連番動画と <code>scenes.json</code>（名前、操作範囲、出力ファイル、録画区間、概算秒数）が追加されます。秒数は結合前の収録時間合計で、MP4のフレーム・音声の丸めによりわずかに異なります。場面名はファイル名に使わないため、同じ名前も指定できます。</p>
+<p>途中保存・再開では録画区間と場面の対応も復元します。場面境界でドラッグや入力を終えて保存するため、直接の <code>mouse.* / keyboard.* / project.*</code> を含む独自手順は場面別出力の対象外です。実演には <code>demoSeconds</code> を使ってください。出力設定は制作開始時に固定されます。</p>
+<h2>途中保存と再開</h2>
+<p>自動生成した制作手順は25操作ごと、対象切替時、素材追加後に保存します。保存済みsb3・ID対応表・元の素材・録画区間・履歴は <code>outputs/{id}/</code> に残り、サーバー再起動後も再開できます。</p>
+<pre>POST /jobs/{id}/pause   // 現在の操作を完了し、保存して一時停止
+POST /jobs/{id}/resume  // 最後に保存された操作の次から再開
+GET  /jobs             // 保存済みの制作履歴
+GET  /jobs/{id}         // checkpoint.step / resumable / status</pre>
+<p>ジョブ作成時の <code>checkpointEvery</code> は1〜100（初期値25）。再開時は元の設定を引き継ぎます。失敗や中止からも保存地点に戻って再開でき、未保存区間は撮り直します。失敗原因が残っていれば同じ操作で再び停止します。録画区間は完成時に結合し、失敗途中の映像は完成動画に含めません。</p>
+<p>直接の <code>mouse.* / keyboard.* / project.*</code> 操作を含む独自手順と個別操作セッションは途中再開の対象外です。実行中の変数・スレッドやドラッグ途中の状態は保存しません。通常の完成後の実演は自動再構築を保存した後に行います。旧版で作成したジョブは保存地点がないため再開できません。</p>
+<h2>読みやすい倍率</h2>
+<p>ジョブ・セッション作成時に <code>minScale: 0.8</code>（初期値）を指定できます。範囲は0.3〜1.5。自動移動はこの倍率下限を保ち、画面に収まらない移動はスクロールと中継ドラッグで行います。セッション中は <code>{"type":"view.configure","minScale":1}</code> で変更できます。</p>
+<p><code>workspace.zoom</code> は全体像を見せるため指定倍率に一時的に変更します。次のブロック操作時には下限以上に戻ります。明示的な縮小を維持したい場合は <code>view.configure</code> で下限も変更してください。</p>
+<h2>1操作ずつ動かす</h2><pre>POST /sessions
+{"projectId":"読み込んだID","blank":true}
+
+POST /sessions/{id}/actions
+[
+  {"type":"target.select","target":"Sprite1"},
+  {"type":"block.add","sourceId":"flag","opcode":"event_whenflagclicked",
+   "place":{"x":80,"y":80}},
+  {"type":"block.add","sourceId":"move","opcode":"motion_movesteps",
+   "place":{"after":"flag"}},
+  {"type":"block.input","block":"move","input":"STEPS","value":"123"}
+]</pre>
+<p><code>sourceId</code>は呼び出し側が決める別名です。以後そのIDでブロックを指定できます。別名はスプライトごとに管理します。配置座標はコード領域のワークスペース座標です。</p>
+<p><code>block.add</code> / <code>block.move</code> の <code>place.after</code>、または <code>place.parent</code> と <code>place.input</code> を指定すると、その接続先だけにスナップします。型が合わなければエラーになります。<code>place.x / y</code> の場合は近くのブロックに自動接続せず配置します。制御は各APIドラッグの終了・失敗時に解除され、通常のマウス操作には残りません。</p>
+<table><thead><tr><th>操作</th><th>主なパラメーター</th></tr></thead><tbody>
+<tr><td>target.select</td><td>target、ステージなら isStage: true</td></tr>
+<tr><td>tab.select</td><td>tab: code / costumes / sounds（ステージのcostumesは背景）</td></tr>
+<tr><td>costume.add / sound.add</td><td>assetIndex: 元sb3の素材番号（0始まり）、任意のsourceTarget: 素材元のスプライト名</td></tr>
+<tr><td>costume.select</td><td>index: 追加済みコスチュームの番号（0始まり）</td></tr>
+<tr><td>broadcast.create</td><td>name、sourceId、block。block省略時は名前を予約し、後続のblock.fieldで実際に作成</td></tr>
+<tr><td>category.select</td><td>category: motion / looks / sound / events / control / sensing / operators / variables / myBlocks / pen</td></tr>
+<tr><td>variable.create</td><td>name、scope: global / local、kind: list（省略時は変数）、value</td></tr>
+<tr><td>procedure.create</td><td>sourceId、prototypeId、mutation: sb3の定義情報、x、y</td></tr>
+<tr><td>block.add</td><td>sourceId、opcode、place、必要に応じて fields / mutation</td></tr>
+<tr><td>block.move</td><td>block、place</td></tr>
+<tr><td>block.input</td><td>block、input、value</td></tr>
+<tr><td>block.field</td><td>block、field、value、必要に応じて input</td></tr>
+<tr><td>block.delete</td><td>block</td></tr>
+<tr><td>view.configure</td><td>minScale: 0.3〜1.5（初期値0.8）</td></tr>
+<tr><td>workspace.focus / workspace.zoom</td><td>block / scale</td></tr>
+<tr><td>mouse.move / mouse.click</td><td>x、y（画面座標）、duration / button</td></tr>
+<tr><td>mouse.down / mouse.up / mouse.wheel</td><td>ホイール時 dx、dy</td></tr>
+<tr><td>keyboard.type / keyboard.press</td><td>text、replace / key（例: Enter、Control+A）</td></tr>
+<tr><td>project.start / project.stop / wait</td><td>待機時 ms</td></tr>
+</tbody></table>
+<h2>素材の追加</h2><p>セッション作成時に <code>blank: true, animateAssets: true</code> を指定すると、透明な準備用コスチューム1枚から開始します。読み込んだsb3を素材元として保持し、最初の画像追加後に準備用コスチュームを画面上で削除します。スプライトを選び、<code>{"type":"costume.add","assetIndex":0}</code> または <code>{"type":"sound.add","assetIndex":0}</code> を実行します。OSのファイル選択画面は収録せず、ファイルは自動選択します。</p>
+<h2>特殊な設定欄</h2><p><code>block.input</code> と <code>block.field</code> は同じ入力判定を使います。色は <code>#rrggbb</code> を指定すると色選択画面のスライダーを操作し、元のRGB値を保持します。角度・数値・文字は入力エディタ、キー・対象・素材・ペンの色特性などは選択メニューで設定します。入力後の値も確認します。</p>
+<h2>メッセージ名</h2><p>実際に使う送信・受信ブロックを置き、その <code>block.field</code> に <code>field: "BROADCAST_OPTION", value: "開始"</code> を指定します。送信ブロックには <code>input: "BROADCAST_INPUT"</code> も指定します。存在しない名前は公式ダイアログで作成します。</p>
+<h2>配置の指定</h2><pre>{"place":{"x":100,"y":200}}                       // 独立したブロック
+{"place":{"after":"flag"}}                      // 下につなぐ
+{"place":{"parent":"loop","input":"SUBSTACK"}} // 繰り返しの中
+{"place":{"parent":"move","input":"STEPS"}}    // 入力に計算ブロックを入れる</pre>
+<h2>録画と保存</h2><table><tbody><tr><td>POST /sessions/{id}/recording/start</td><td>録画開始</td></tr><tr><td>POST /sessions/{id}/recording/stop</td><td>停止・MP4生成、成果物URLを返す</td></tr><tr><td>GET /sessions/{id}/project.sb3</td><td>編集中のsb3を保存</td></tr><tr><td>GET /sessions/{id}/screenshot</td><td>現在の画面</td></tr><tr><td>GET /sessions/{id}</td><td>スプライト・ブロック一覧</td></tr><tr><td>DELETE /sessions/{id}</td><td>専用ブラウザを終了</td></tr><tr><td>GET /capabilities</td><td>対応操作一覧</td></tr><tr><td>POST /jobs/{id}/cancel</td><td>次の操作の前に中止</td></tr></tbody></table>
+<h2>初期版の範囲</h2><p>ブロックの編集、変数・リスト・定義ダイアログ、PENを対象にしています。背景・コスチューム・音は公式アップロードメニューから追加できます。スプライト属性・変数の初期値はデータから準備します。ペイント・音声の詳細編集、クラウド同期、ハードウェア拡張は未対応です。未対応の入力形式はエラーとして停止し、成功扱いにはしません。録画にはScratchの実行音を含みます。</p>
+<p>同じセッションの操作は順番に呼び出してください。<code>/jobs</code>で生成した操作列は<code>plan.json</code>に保存され、編集したplanを次のジョブの<code>plan</code>に指定できます。失敗時は操作ログと画面画像を保存します。</p>
+</article></body></html>
