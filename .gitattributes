@@ -1,0 +1,2 @@
+# Preserve the committed CRLF bytes in Windows launchers, including ZIP downloads.
+*.cmd -text whitespace=cr-at-eol

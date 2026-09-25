@@ -13,6 +13,8 @@ GitHubから取得した場合は、最初に `npm ci` と `npm run setup` を�
 
 処理には専用のChromeを使用します。普段のChromeプロファイルには接続しません。サーバーを起動した端末を閉じるとツールは終了します。
 
+`起動.cmd` はWindows向けにASCII・CRLF改行で保存しています。編集する場合もこの形式を維持してください。GitHubのZIPダウンロードでも同じ改行を保持します。
+
 ## 動作環境・再セットアップ
 
 - Windows、Node.js 18以上、Google Chrome、FFmpeg（libx264を含むビルド）

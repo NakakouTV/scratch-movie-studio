@@ -1,7 +1,11 @@
 @echo off
-chcp 65001 >nul
-cd /d "%~dp0"
+setlocal
+pushd "%~dp0"
+if errorlevel 1 exit /b 1
 echo Scratch Movie Studio
-echo http://127.0.0.1:8601 をブラウザで開いてください。
-call npm start
+echo Open http://127.0.0.1:8601 in your browser.
+call npm.cmd start
+set "STUDIO_EXIT_CODE=%ERRORLEVEL%"
+popd
 pause
+exit /b %STUDIO_EXIT_CODE%
