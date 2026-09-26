@@ -23,12 +23,14 @@ try{
   });
  };
  await c.execute({type:'block.add',sourceId:'arg',opcode:'argument_reporter_string_number',fields:{VALUE:['x2',null]},place:{parent:'math3',input:'NUM1'}});
- assert.ok(segments>=3,'distant argument should use an intermediate drop');
+ assert.equal(segments,1,'distant argument must use one uninterrupted drag');
+ segments=0;
  await c.execute({type:'block.move',block:'arg',place:{x:800,y:18000}});
+ assert.equal(segments,1,'long downward travel must not release the mouse');
  const location=await c.page.evaluate(id=>{const p=studio.workspace.getBlockById(id).getRelativeToSurfaceXY();return {x:p.x,y:p.y};},c.resolve('arg'));
  assert.ok(Math.abs(location.x-800)<2&&Math.abs(location.y-18000)<2);
  await c.execute({type:'block.move',block:'arg',place:{parent:'math3',input:'NUM1'}});
  await c.verifyConnection(c.resolve('arg'),{parent:'math3',input:'NUM1'});
  assert.deepEqual(c.errors,[]);
- console.log('far argument, vertical travel and return connection PASS; all drops inside code area');
+ console.log('far argument, vertical travel and return connection PASS; continuous drags and all drops inside code area');
 }catch(e){await c.page.screenshot({path:'test-results/far-argument.png'});throw e;}finally{await c.close();}

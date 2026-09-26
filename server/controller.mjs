@@ -152,8 +152,10 @@ export class EditorController {
     const index={code:0,costumes:1,sounds:2}[tab];
     if(index===undefined)throw new Error('タブは code / costumes / sounds で指定してください。');
     const locator=this.page.getByRole('tab').nth(index);
-    if(await locator.getAttribute('aria-selected')!=='true')await this.click(locator);
-    await this.pause(Math.max(150,this.timing.pause));
+    if(await locator.getAttribute('aria-selected')!=='true'){
+      await this.click(locator);
+      await this.pause(Math.max(150,this.timing.pause));
+    }
     this.activeTab=tab;
     if(tab==='code')await this.page.evaluate(()=>studio.ensureReadable());
   }
@@ -376,14 +378,20 @@ export class EditorController {
     if(variable?.[1])a={...a,variableId:this.variableRefs.get(variable[1])};
     const prefix=a.opcode.split('_')[0];
     if(prefix==='argument') return this.addArgument(a);
-    await this.category(categories[prefix]||prefix);
+    await this.selectTab('code');
+    await this.page.waitForFunction(()=>studio.workspace.getFlyout().scrollTarget===undefined);
+    const category=categories[prefix]||prefix;
+    const location=await this.page.evaluate(spec=>{const b=studio.flyBlock(spec);return b?studio.palettePosition(b.id):null;},a);
+    // ContinuousFlyout already contains neighbouring categories. Keep its
+    // current position when possible, and click only for a distant category.
+    if(!location||(!location.visible&&!location.near&&location.category!==category))await this.category(category);
     if(a.place?.after||a.place?.parent) await this.ensureVisible(this.resolve(a.place.after||a.place.parent),a.place.input?this.mappedInput(a.place.parent,a.place.input):undefined);
     // Locate the actual palette block, then scroll the palette to it.
     const fly=await this.page.evaluate(spec=>{
       const b=studio.flyBlock(spec);if(!b) throw new Error(`パレットにブロックがありません: ${spec.opcode}`);
       return {id:b.id,y:b.getRelativeToSurfaceXY().y};
     },a);
-    await this.page.evaluate(y=>studio.workspace.getFlyout().scrollTo(Math.max(0,y-80)),fly.y);
+    await this.page.evaluate(id=>studio.revealPalette(id),fly.id);
     // ContinuousFlyout scrolls asynchronously. Measuring mid-animation can
     // grab a different block by the time the mouse reaches the palette.
     await this.page.waitForFunction(()=>studio.workspace.getFlyout().scrollTarget===undefined);
@@ -408,20 +416,16 @@ export class EditorController {
   async dragNew(a,source) {
     const p={...(a.place||{x:120,y:120})};if(p.after)p.after=this.resolve(p.after);if(p.parent){p.input=this.mappedInput(p.parent,p.input);p.parent=this.resolve(p.parent);}
     if(source.flyout)await this.page.evaluate(({p,duration})=>studio.revealDestination(p,duration),{p,duration:this.timing.move});
-    else await this.page.evaluate(({id,p,duration})=>studio.frameDrag(id,p,duration),{id:source.id,p,duration:this.timing.move});
+    else await this.ensureVisible(source.id);
     source=await this.prepareSource(source.id,!!source.flyout);
-    const dest=await this.destination(a.place||{x:120,y:120},source);
     const before=await this.page.evaluate(()=>studio.workspace.getAllBlocks(false).map(b=>b.id));
-    await this.dragWithSnap({sourceId:source.id,flyout:!!source.flyout,opcode:a.opcode,before},a.place,async()=>{
-      // Keep the visible drag on a straight path; verify the native snap below.
-      await this.move(dest.x,dest.y,this.timing.drag);
-    });
-    await this.pause(180);
+    await this.dragWithSnap({sourceId:source.id,flyout:!!source.flyout,opcode:a.opcode,before,source},a.place,()=>this.moveHeldBlock(a.place||{x:120,y:120},source));
     const id=await this.page.evaluate(({before,opcode})=>{
       const b=studio.workspace.getAllBlocks(false).find(b=>!before.includes(b.id)&&b.type===opcode&&!b.isShadow()&&b.getParent()?.type!=='procedures_prototype');
       if(!b) throw new Error(`ドラッグでブロックを作成できませんでした: ${opcode}`);
       return b.id;
     },{before,opcode:a.opcode});
+    await this.waitForDrop(id);
     if(a.sourceId)this.aliases.set(this.key(a.sourceId),id);
     await this.verifyConnection(id,a.place);
     return {id};
@@ -429,7 +433,7 @@ export class EditorController {
   async prepareSource(id,flyout) {
     for(let attempt=0;attempt<3;attempt++){
       if(flyout){
-        await this.page.evaluate(id=>{const f=studio.workspace.getFlyout(),b=f.getWorkspace().getBlockById(id);if(!b)throw new Error('パレットのブロックが変わりました。');f.scrollTo(Math.max(0,b.getRelativeToSurfaceXY().y-80));},id);
+        await this.page.evaluate(id=>studio.revealPalette(id),id);
         await this.page.waitForFunction(()=>studio.workspace.getFlyout().scrollTarget===undefined);
       }
       let source=await this.page.evaluate(({id,flyout})=>studio.dragSource(id,flyout),{id,flyout});
@@ -450,6 +454,7 @@ export class EditorController {
     if(p.parent){p.input=this.mappedInput(place.parent,p.input);p.parent=this.resolve(p.parent);}
     await this.page.evaluate(spec=>studio.beginTargetedDrag(spec),{...spec,place:p});
     try {
+      await this.page.evaluate(source=>{studio.dragMotion=createStudioDragMotion(studio,source);},spec.source);
       await this.page.mouse.down();
       await move();
       await this.page.evaluate(()=>studio.targetedDrag.prepareDrop());
@@ -458,7 +463,27 @@ export class EditorController {
       throw error;
     }finally{
       try{await this.page.mouse.up();}
-      finally{await this.page.evaluate(()=>studio.endTargetedDrag());}
+      finally{await this.page.evaluate(()=>{studio.dragMotion?.restore();studio.dragMotion=null;studio.endTargetedDrag();});}
+    }
+  }
+  async moveHeldBlock(place,source) {
+    let dest=await this.destination(place,source);
+    // Cross Blockly's drag threshold using real pointer events before panning.
+    const dx=dest.x-this.position.x,dy=dest.y-this.position.y,length=Math.hypot(dx,dy);
+    await this.move(this.position.x+(length>24?dx/length*24:24),this.position.y+(length>24?dy/length*24:0),Math.min(100,this.timing.drag));
+    await this.page.waitForFunction(()=>studio.dragMotion?.active,null,{timeout:2000});
+    // Native clone/focus may have scrolled the workspace at gesture start.
+    dest=await this.destination(place,source);
+    const view=await this.page.evaluate(()=>({area:studio.codeArea(),x:studio.workspace.scrollX,y:studio.workspace.scrollY}));
+    const end={x:Math.max(view.area.left+30,Math.min(view.area.right-30,dest.x)),y:Math.max(view.area.top+30,Math.min(view.area.bottom-30,dest.y))};
+    const pan={x:end.x-dest.x,y:end.y-dest.y};
+    const duration=Math.max(this.timing.drag,Math.min(6000,this.timing.drag*Math.sqrt(1+Math.hypot(pan.x,pan.y)/500)));
+    const start={...this.position},steps=Math.max(1,Math.ceil(duration/33));
+    for(let i=1;i<=steps;i++){
+      const t=i/steps,e=t*t*(3-2*t);
+      if(pan.x||pan.y)await this.page.evaluate(({x,y})=>studio.dragMotion.scrollTo(x,y),{x:view.x+pan.x*e,y:view.y+pan.y*e});
+      await this.move(start.x+(end.x-start.x)*e,start.y+(end.y-start.y)*e,0);
+      await this.pause(duration/steps);
     }
   }
   async verifyConnection(id,place) {
@@ -476,30 +501,24 @@ export class EditorController {
       if(!b) throw new Error(`定義の引数が見つかりません: ${name}`);return b.id;
     },{name,opcode:a.opcode});
     await this.ensureVisible(source);
-    const src=await this.page.evaluate(id=>{
-      const w=studio.workspace,b=w.getBlockById(id),area=studio.codeArea();
-      const point=new DOMPoint((area.left+area.right)/2,(area.top+area.bottom)/2).matrixTransform(w.getCanvas().getScreenCTM().inverse());
-      return {id:b.id,box:studio.box(b.getSvgRoot()),connection:studio.connectionPoint(b.outputConnection),staging:{x:point.x,y:point.y}};
-    },source);
-    // Drag into a free workspace position first so a distant destination can be revealed.
-    const result=await this.dragNew({...a,place:src.staging},src);
-    await this.moveBlock(result.id,a.place);
-    return result;
+    return this.dragNew(a,{id:source,flyout:false});
   }
   async moveBlock(id,place) {
     id=this.resolve(id);
-    // Keep source and destination in view before mouse-down. Panning a Blockly
-    // workspace during a live drag invalidates the gesture's cached transform.
-    const p={...place};if(p.after)p.after=this.resolve(p.after);if(p.parent){p.input=this.mappedInput(place.parent,p.input);p.parent=this.resolve(p.parent);}
-    for(let segment=0;segment<256;segment++){
-      const waypoint=await this.page.evaluate(({id,p,duration})=>studio.frameDrag(id,p,duration),{id,p,duration:this.timing.move});
-      const source=await this.prepareSource(id,false),step=waypoint||place;
-      const dest=await this.destination(step,source);
-      await this.dragWithSnap({sourceId:id,blockId:id},step,()=>this.move(dest.x,dest.y,this.timing.drag));
-      await this.pause(150);
-      if(!waypoint){await this.verifyConnection(id,place);return {id};}
-    }
-    throw new Error('移動先が遠すぎるため、256回の中継移動で到達できませんでした。');
+    await this.ensureVisible(id);
+    const source=await this.prepareSource(id,false);
+    await this.dragWithSnap({sourceId:id,blockId:id,source},place,()=>this.moveHeldBlock(place,source));
+    await this.waitForDrop(id);await this.verifyConnection(id,place);return {id};
+  }
+  async waitForDrop(id) {
+    // Blockly flushes its events to the VM asynchronously. Continue when the
+    // dropped block is committed instead of pausing a fixed 150–180 ms.
+    await this.page.waitForFunction(id=>{
+      const w=studio.workspace,b=w.getBlockById(id),vm=studio.vm.editingTarget.blocks.getBlock(id);
+      return !!b&&!!vm&&!w.getGesture()?.getCurrentDragger()&&
+        (vm.parent??null)===(b.getParent()?.id??null)&&
+        (vm.next??null)===(b.getNextBlock()?.id??null);
+    },id,{polling:'raf',timeout:5000});
   }
   async execute(a) {
     switch(a.type) {

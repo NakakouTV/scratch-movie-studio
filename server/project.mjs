@@ -68,20 +68,29 @@ export function buildPlan(project,{assets=false}={}) {
       }
       if(b.shadow || b.opcode==='procedures_prototype') return;
       if(b.opcode!=='procedures_definition') emit('block.add',{sourceId:id,opcode:b.opcode,mutation:b.mutation,fields:b.fields,place:place||{x:b.x||40,y:b.y||40}});
-      for (const [field,value] of Object.entries(b.fields||{})) emit('block.field',{block:id,field,value:value[0],referenceId:value[1]});
+      // sensing_of's property menu depends on its OBJECT shadow. Configure
+      // that menu first, before the property and before covering it with a reporter.
+      let fieldsPending=true;
+      const emitFields=()=>{if(!fieldsPending)return;for(const [field,value] of Object.entries(b.fields||{}))emit('block.field',{block:id,field,value:value[0],referenceId:value[1]});fieldsPending=false;};
+      if(b.opcode!=='sensing_of')emitFields();
       for (const [name,input] of Object.entries(b.inputs||{})) {
         if(name==='custom_block') continue;
         const active=input[1],fallback=input[2];
-        // Enter literals before dropping reporters, retaining the original hidden shadow.
+        // Leave covered numeric/text/colour literals at the palette defaults.
+        // Menus can affect dependent fields (notably sensing_of), so retain them.
+        const covered=input[0]===3&&(Array.isArray(active)?active[0]>=12:typeof active==='string'&&!blocks[active]?.shadow);
         const shadow=input[0]===3?fallback:active;
         if(Array.isArray(shadow)&&shadow[0]===11) emit('block.field',{block:id,input:name,field:'BROADCAST_OPTION',value:String(shadow[1]??''),referenceId:shadow[2]});
-        else if(Array.isArray(shadow)&&shadow[0]<12) emit('block.input',{block:id,input:name,value:String(shadow[1]??'')});
+        else if(Array.isArray(shadow)&&shadow[0]<11){if(!covered)emit('block.input',{block:id,input:name,value:String(shadow[1]??'')});}
         else if(typeof shadow==='string'&&blocks[shadow]?.shadow) {
-          for(const [field,v] of Object.entries(blocks[shadow].fields||{})) emit('block.field',{block:id,input:name,field,value:v[0],referenceId:v[1]});
+          const literal=/^(math_number|math_integer|math_whole_number|math_positive_number|math_angle|text|colour_picker)$/.test(blocks[shadow].opcode);
+          if(!covered||!literal)for(const [field,v] of Object.entries(blocks[shadow].fields||{})) emit('block.field',{block:id,input:name,field,value:v[0],referenceId:v[1]});
         }
+        if(b.opcode==='sensing_of'&&name==='OBJECT')emitFields();
         if(typeof active==='string'&&!blocks[active]?.shadow) visit(active,{parent:id,input:name});
         else if(Array.isArray(active)&&active[0]>=12) emit('block.add',{sourceId:`${id}::${name}`,opcode:active[0]===12?'data_variable':'data_listcontents',fields:{[active[0]===12?'VARIABLE':'LIST']:[active[1],active[2]]},place:{parent:id,input:name}});
       }
+      emitFields();
       if(b.next) visit(b.next,{after:id});
     }
     for (const [index,[id,b]] of roots.entries()) {
@@ -92,6 +101,20 @@ export function buildPlan(project,{assets=false}={}) {
   }
   const ranges=scenes.map((s,i)=>({...s,to:(scenes[i+1]?.from??actions.length+1)-1})).filter(s=>s.from<=s.to).map((s,i)=>({id:`scene-${i+1}`,...s,enabled:true}));
   return {version:1,editorVersion:'15.1.1',settings:{width:1920,height:1080,fps:30,locale:'ja',animateAssets:assets},warnings,actions,scenes:ranges};
+}
+
+// Upgrade the old adjacent PROPERTY -> OBJECT pair only in the unexecuted
+// tail. Keep action count and completed checkpoint indices intact on resume.
+export function repairDependentFieldOrder(actions,from=0){
+  let result=actions;
+  for(let i=from;i<actions.length-1;i++){
+    const a=actions[i],b=actions[i+1];
+    if(a.type==='block.field'&&!a.input&&a.field==='PROPERTY'&&b.type==='block.field'&&b.block===a.block&&b.input==='OBJECT'&&b.field==='OBJECT'){
+      if(result===actions)result=[...actions];
+      [result[i],result[i+1]]=[b,a];i++;
+    }
+  }
+  return result;
 }
 
 // Compare program meaning, not generated block, variable, argument IDs or editor coordinates.

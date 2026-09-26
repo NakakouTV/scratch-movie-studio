@@ -1,7 +1,45 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import {readSb3,blankProject,buildPlan,compareProjects} from '../server/project.mjs';
+import {readSb3,blankProject,buildPlan,compareProjects,repairDependentFieldOrder} from '../server/project.mjs';
+
+test('sensing property follows its object menu, before a dynamic object reporter',()=>{
+  for(const dynamic of [false,true]){
+    const p={targets:[{name:'Stage',isStage:true,blocks:{}},{name:'Sprite',blocks:{
+      of:{opcode:'sensing_of',topLevel:true,fields:{PROPERTY:['x position',null]},inputs:{OBJECT:dynamic?[3,'join','menu']:[1,'menu']}},
+      menu:{opcode:'sensing_of_object_menu',shadow:true,fields:{OBJECT:['Other',null]}},
+      ...(dynamic?{join:{opcode:'operator_join',inputs:{STRING1:[1,[10,'Oth']],STRING2:[1,[10,'er']]}}}:{})
+    }}]};
+    const a=buildPlan(p).actions,object=a.findIndex(a=>a.field==='OBJECT'),property=a.findIndex(a=>a.field==='PROPERTY');
+    assert.ok(object>=0&&object<property);
+    if(dynamic)assert.ok(property<a.findIndex(a=>a.opcode==='operator_join'));
+  }
+});
+
+test('old pending sensing field order is repaired without changing checkpoint prefix or action count',()=>{
+  const property={type:'block.field',block:'b',field:'PROPERTY',value:'y position'},object={type:'block.field',block:'b',input:'OBJECT',field:'OBJECT',value:'Sprite3'};
+  const actions=[property,object,property,object],fixed=repairDependentFieldOrder(actions,2);
+  assert.deepEqual(fixed,[property,object,object,property]);assert.deepEqual(actions,[property,object,property,object]);
+  assert.equal(repairDependentFieldOrder(fixed,2),fixed);
+  assert.equal(repairDependentFieldOrder(actions,3),actions);
+});
+
+test('covered literals keep defaults while active constants and dependent menus are preserved',()=>{
+  const p={targets:[{name:'Stage',isStage:true,variables:{v:['n',3]},blocks:{
+    move:{opcode:'motion_movesteps',topLevel:true,inputs:{STEPS:[3,'sum',[4,'999']]}},
+    sum:{opcode:'operator_add',parent:'move',inputs:{NUM1:[3,[12,'n','v'],[4,'888']],NUM2:[1,[4,'7']]}},
+    say:{opcode:'looks_say',topLevel:true,inputs:{MESSAGE:[3,'join','textShadow']}},
+    textShadow:{opcode:'text',shadow:true,fields:{TEXT:['隠れる値',null]}},
+    join:{opcode:'operator_join',parent:'say',inputs:{STRING1:[1,[10,'表示']],STRING2:[1,[10,'する']]}}
+  }}]};
+  const actions=buildPlan(p).actions;
+  assert.ok(!actions.some(a=>a.type==='block.input'&&['999','888'].includes(a.value)));
+  assert.ok(!actions.some(a=>a.type==='block.field'&&a.value==='隠れる値'));
+  assert.ok(actions.some(a=>a.type==='block.input'&&a.block==='sum'&&a.input==='NUM2'&&a.value==='7'));
+  assert.ok(actions.some(a=>a.sourceId==='sum::NUM1'));
+  const q=structuredClone(p);q.targets[0].blocks.move.inputs.STEPS[2][1]='10';q.targets[0].blocks.sum.inputs.NUM1[2][1]='';q.targets[0].blocks.textShadow.fields.TEXT[0]='こんにちは!';
+  assert.equal(compareProjects(p,q).ok,true);
+});
 
 test('sample plan creates procedures before calls and types nested literals',async t=>{
   const file=(await fs.readdir('.')).find(n=>n.startsWith('Fast ')&&n.endsWith('.sb3'));

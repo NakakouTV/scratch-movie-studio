@@ -12,6 +12,7 @@ const job = await fetch(base + '/jobs', {
 }).then(r =&gt; r.json());
 // GET /jobs/{id} で進捗と成果物URLを取得</pre>
 <p>標準では背景・コスチューム・音の追加も録画します。素材を準備済みにする場合は <code>animateAssets: false</code> をジョブに指定します。</p>
+<p>自動生成する手順では、入力欄へ別のブロックを入れる場合、隠れる数値・文字・色の定数を元sb3の値へ書き換えず、パレットの初期値を保ちます。実際に使う定数や、他の選択肢に影響する対象メニュー等は設定します。完成比較は有効な接続と値を比較するため、隠れた既定値の違いで失敗にはしません。この省略は新しく生成する手順に適用されます。保存済みの手順や、明示的な <code>block.input</code> 命令は引き続きその入力を実行します。</p>
 <h2>場面別の動画出力</h2>
 <p>ジョブ作成時の <code>outputMode</code> に <code>full</code>（全体のみ・APIの初期値）、<code>scenes</code>（場面別のみ）、<code>both</code>（両方）を指定します。管理画面の初期値は「全体＋場面別」です。MP4生成を無効にした場合、動画は出力しません。</p>
 <p>自動手順の <code>plan.scenes</code> は、対象ごとの素材追加、変数・リスト、定義作成、各スクリプトの組み立てに分かれます。定義は呼び出しより先に作成するため、「定義の作成」と「定義の中の処理」は別の場面です。完成後の実演は <code>demoSeconds &gt; 0</code> のとき最後の場面になります。</p>
@@ -37,7 +38,7 @@ GET  /jobs/{id}         // checkpoint.step / resumable / status</pre>
 <p>ジョブ作成時の <code>checkpointEvery</code> は1〜100（初期値25）。再開時は元の設定を引き継ぎます。失敗や中止からも保存地点に戻って再開でき、未保存区間は撮り直します。失敗原因が残っていれば同じ操作で再び停止します。録画区間は完成時に結合し、失敗途中の映像は完成動画に含めません。</p>
 <p>直接の <code>mouse.* / keyboard.* / project.*</code> 操作を含む独自手順と個別操作セッションは途中再開の対象外です。実行中の変数・スレッドやドラッグ途中の状態は保存しません。通常の完成後の実演は自動再構築を保存した後に行います。旧版で作成したジョブは保存地点がないため再開できません。</p>
 <h2>読みやすい倍率</h2>
-<p>ジョブ・セッション作成時に <code>minScale: 0.8</code>（初期値）を指定できます。範囲は0.3〜1.5。自動移動はこの倍率下限を保ち、画面に収まらない移動はスクロールと中継ドラッグで行います。セッション中は <code>{"type":"view.configure","minScale":1}</code> で変更できます。</p>
+<p>ジョブ・セッション作成時に <code>minScale: 0.8</code>（初期値）を指定できます。範囲は0.3〜1.5。画面に収まらない移動は、倍率を下げずにブロックをつかんだままコード領域をスクロールして行います。カーソルとブロックのつかみ位置を同期し、途中でマウスを離しません。遠距離では移動時間を延ばします。セッション中は <code>{"type":"view.configure","minScale":1}</code> で変更できます。</p>
 <p><code>workspace.zoom</code> は全体像を見せるため指定倍率に一時的に変更します。次のブロック操作時には下限以上に戻ります。明示的な縮小を維持したい場合は <code>view.configure</code> で下限も変更してください。</p>
 <h2>1操作ずつ動かす</h2><pre>POST /sessions
 {"projectId":"読み込んだID","blank":true}
@@ -52,6 +53,7 @@ POST /sessions/{id}/actions
   {"type":"block.input","block":"move","input":"STEPS","value":"123"}
 ]</pre>
 <p><code>sourceId</code>は呼び出し側が決める別名です。以後そのIDでブロックを指定できます。別名はスプライトごとに管理します。配置座標はコード領域のワークスペース座標です。</p>
+<p><code>block.add</code> はパレット内の現在位置を使い、対象がつかめる位置にあればスクロールもカテゴリのクリックも行いません。近い場所（おおむねパレット1画面分以内）や同じカテゴリ内はスクロールだけで移動し、遠い別カテゴリに限ってカテゴリをクリックします。明示的な <code>category.select</code> は指定どおりクリックします。</p>
 <p><code>block.add</code> / <code>block.move</code> の <code>place.after</code>、または <code>place.parent</code> と <code>place.input</code> を指定すると、その接続先だけにスナップします。型が合わなければエラーになります。<code>place.x / y</code> の場合は近くのブロックに自動接続せず配置します。制御は各APIドラッグの終了・失敗時に解除され、通常のマウス操作には残りません。</p>
 <table><thead><tr><th>操作</th><th>主なパラメーター</th></tr></thead><tbody>
 <tr><td>target.select</td><td>target、ステージなら isStage: true</td></tr>
@@ -97,6 +99,7 @@ const actions = [target.selectAction,
 <h2>素材の追加</h2><p>セッション作成時に <code>blank: true, animateAssets: true</code> を指定すると、透明な準備用コスチューム1枚から開始します。読み込んだsb3を素材元として保持し、最初の画像追加後に準備用コスチュームを画面上で削除します。スプライトを選び、<code>{"type":"costume.add","assetIndex":0}</code> または <code>{"type":"sound.add","assetIndex":0}</code> を実行します。OSのファイル選択画面は収録せず、ファイルは自動選択します。</p>
 <h2>特殊な設定欄</h2><p><code>block.input</code> と <code>block.field</code> は同じ入力判定を使います。色は <code>#rrggbb</code> を指定すると色選択画面のスライダーを操作し、元のRGB値を保持します。角度・数値・文字は入力エディタ、キー・対象・素材・ペンの色特性などは選択メニューで設定します。入力後の値も確認します。</p>
 <h2>メッセージ名</h2><p>実際に使う送信・受信ブロックを置き、その <code>block.field</code> に <code>field: "BROADCAST_OPTION", value: "開始"</code> を指定します。送信ブロックには <code>input: "BROADCAST_INPUT"</code> も指定します。存在しない名前は公式ダイアログで作成します。</p>
+<h2>「対象の属性」ブロック</h2><p><code>sensing_of</code> は、先に <code>block.field</code> で <code>input: "OBJECT", field: "OBJECT", value: "対象スプライト名"</code> を選び、その後 <code>field: "PROPERTY", value: "x position"</code> 等を設定します。ステージにはx座標・y座標の選択肢がありません。内部値と現在の画面の日本語表示の両方で指定できます。自動制作手順ではこの設定順序を適用し、旧手順の隣接したPROPERTY→OBJECTの順序も未実行部分で補正します。</p>
 <h2>配置の指定</h2><pre>{"place":{"x":100,"y":200}}                       // 独立したブロック
 {"place":{"after":"flag"}}                      // 下につなぐ
 {"place":{"parent":"loop","input":"SUBSTACK"}} // 繰り返しの中

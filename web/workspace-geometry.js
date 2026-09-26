@@ -60,44 +60,21 @@ window.installStudioGeometry=studio=>{
       }
     }
     const c=b.outputConnection||b.previousConnection;
-    return {id,flyout,box:r,connection:c?studio.connectionPoint(c):null,grab};
+    const origin=studio.point(w,b.getRelativeToSurfaceXY().x,b.getRelativeToSurfaceXY().y);
+    return {id,flyout,box:r,connection:c?studio.connectionPoint(c):null,grab,grip:grab?{x:(grab.x-origin.x)/scale,y:(grab.y-origin.y)/scale}:null};
   };
-  studio.frameDrag=async(id,p,duration)=>{
-    studio.ensureReadable();
-    const w=studio.workspace,b=w.getBlockById(id);
-    if(!b)throw new Error('移動するブロックがありません。');
-    const connection=p.after?w.getBlockById(p.after)?.nextConnection:p.parent?w.getBlockById(p.parent)?.getInput(p.input)?.connection:null;
-    if((p.after||p.parent)&&!connection)throw new Error('接続先がありません。');
-    const bounds=()=>{
-      const r=studio.box(b.pathObject?.svgPath||b.getSvgRoot()),to=connection?studio.connectionPoint(connection):studio.point(w,p.x??100,p.y??100);
-      return {left:Math.min(r.x,to.x),right:Math.max(r.x+Math.min(r.width,100*w.scale),to.x+60*w.scale),top:Math.min(r.y,to.y),bottom:Math.max(r.y+40*w.scale,to.y+40*w.scale)};
-    };
-    let r=bounds(),a=studio.codeArea();
-    const factor=Math.min(1,(a.right-a.left-60)/(r.right-r.left),(a.bottom-a.top-60)/(r.bottom-r.top));
-    if(factor<1){w.setScale(Math.max(studio.minScale,w.scale*factor));r=bounds();a=studio.codeArea();}
-    await studio.pan((a.left+a.right-r.left-r.right)/2,(a.top+a.bottom-r.top-r.bottom)/2,duration);
-    // At the minimum zoom, travel in visible segments with panning between
-    // drags. Releasing outside the browser can cancel Blockly's drop entirely.
-    if(!studio.dragSource(id).grab)await studio.reveal(id,null,null,duration);
-    const source=studio.dragSource(id);if(!source.grab)throw new Error('ブロックを操作可能な場所に表示できません。');
-    a=studio.codeArea();
-    const to=connection?studio.connectionPoint(connection):studio.point(w,p.x??100,p.y??100),anchor=connection&&source.connection?source.connection:source.box;
-    const end={x:to.x+source.grab.x-anchor.x,y:to.y+source.grab.y-anchor.y};
-    const safe={left:a.left+20,right:a.right-20,top:a.top+20,bottom:a.bottom-20};
-    if(end.x>=safe.left&&end.x<=safe.right&&end.y>=safe.top&&end.y<=safe.bottom)return null;
-    // Re-centre the source to leave room for the next segment in any direction.
-    await studio.pan((a.left+a.right)/2-source.grab.x,(a.top+a.bottom)/2-source.grab.y,duration);
-    const fresh=studio.dragSource(id),destination=connection?studio.connectionPoint(connection):studio.point(w,p.x??100,p.y??100);
-    if(!fresh.grab)throw new Error('中継移動の開始位置を表示できません。');
-    const localAnchor=connection&&fresh.connection?fresh.connection:fresh.box;
-    const dx=destination.x-localAnchor.x,dy=destination.y-localAnchor.y;
-    let fraction=1;
-    if(dx>0)fraction=Math.min(fraction,(safe.right-fresh.grab.x)/dx);
-    if(dx<0)fraction=Math.min(fraction,(safe.left-fresh.grab.x)/dx);
-    if(dy>0)fraction=Math.min(fraction,(safe.bottom-fresh.grab.y)/dy);
-    if(dy<0)fraction=Math.min(fraction,(safe.top-fresh.grab.y)/dy);
-    if(fraction<=0||!Number.isFinite(fraction))throw new Error('画面内に移動経路を確保できません。');
-    const waypoint=new DOMPoint(fresh.box.x+dx*fraction,fresh.box.y+dy*fraction).matrixTransform(w.getCanvas().getScreenCTM().inverse());
-    return {x:waypoint.x,y:waypoint.y};
+  studio.palettePosition=id=>{
+    const f=studio.workspace.getFlyout(),w=f.getWorkspace(),b=w.getBlockById(id);
+    if(!b)throw new Error('パレットのブロックが変わりました。');
+    const r=studio.box(b.pathObject?.svgPath||b.getSvgRoot()),v=studio.box(w.getParentSvg());
+    const top=v.y+16,bottom=Math.min(innerHeight,v.y+v.height)-24,height=Math.min(r.height,40*w.scale);
+    const delta=r.y<top?r.y-top:r.y+height>bottom?r.y+height-bottom:0;
+    const selected=studio.workspace.getToolbox().getSelectedItem();
+    return {visible:!!studio.dragSource(id,true).grab,near:Math.abs(delta)<=Math.max(100,bottom-top),
+      category:selected?.toolboxItemDef_?.toolboxitemid,scroll:Math.max(0,(-w.scrollY+delta)/w.scale)};
+  };
+  studio.revealPalette=id=>{
+    const p=studio.palettePosition(id);
+    if(!p.visible)studio.workspace.getFlyout().scrollTo(p.scroll);
   };
 };

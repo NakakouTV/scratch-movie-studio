@@ -68,16 +68,20 @@ export async function apiRouter(root,baseURL) {
   router.post('/sessions/:id/recording/start',asyncRoute(async(req,res)=>{
     const s=session(req.params.id);if(s.recorder)throw new Error('録画中です。');
     await runProcess(process.env.FFMPEG_PATH||'ffmpeg',['-version']);
-    s.recorder=new Recorder(s.controller.page,s.directory);await s.recorder.start();res.json({recording:true});
+    s.recorder=new Recorder(s.controller.page,s.directory);
+    try{await s.recorder.start();}catch(e){s.recorder=null;throw e;}
+    res.json({recording:true});
   }));
   router.post('/sessions/:id/recording/stop',asyncRoute(async(req,res)=>{
     const s=session(req.params.id);if(!s.recorder)throw new Error('録画が開始されていません。');
-    await s.recorder.stop();await s.recorder.encode();s.recorder=null;
+    try{await s.recorder.stop();await s.recorder.encode();}
+    catch(e){await s.recorder.abort();throw e;}
+    finally{s.recorder=null;}
     await fs.writeFile(path.join(s.directory,'actions.json'),JSON.stringify(s.log,null,2));res.json({url:`/outputs/${s.id}/movie.mp4`});
   }));
   router.delete('/sessions/:id',asyncRoute(async(req,res)=>{
     const s=session(req.params.id);if(s.busy)throw new Error('操作中です。');
-    await s.recorder?.stop();await s.controller.close();sessions.delete(s.id);res.json({closed:true});
+    await s.recorder?.abort();await s.controller.close();sessions.delete(s.id);res.json({closed:true});
   }));
   router.post('/jobs',asyncRoute(async(req,res)=>{
     if([...jobs.values()].some(j=>['running','encoding'].includes(j.status)))throw new Error('別の動画を制作中です。');

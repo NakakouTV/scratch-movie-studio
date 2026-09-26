@@ -109,5 +109,6 @@
     studio.store.dispatch({type:'scratch-gui/locales/SELECT_LOCALE',locale:'ja'});
     clearInterval(init);
   }, 50);
-  document.addEventListener('mousemove', e => studio.cursor(e.clientX,e.clientY), true);
+  // Blockly prevents compatibility mouse events during a pointer gesture.
+  document.addEventListener('pointermove', e => studio.cursor(e.clientX,e.clientY), true);
 })();

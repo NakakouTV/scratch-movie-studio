@@ -3,7 +3,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {EditorController} from './controller.mjs';
 import {Recorder} from './recorder.mjs';
-import {blankProject,compareProjects} from './project.mjs';
+import {blankProject,compareProjects,repairDependentFieldOrder} from './project.mjs';
 import {normalizeScenes,joinSegments} from './scenes.mjs';
 
 export const publicJob=job=>{const {controller,recorder,...data}=job;return data;};
@@ -112,6 +112,8 @@ export class JobRunner {
         await c.load(await blankProject(source,{assets:!!plan.settings?.animateAssets}));
         if(options.checkpointable)await checkpoint(0);
       }
+      const repaired=repairDependentFieldOrder(plan.actions,nextIndex);
+      if(repaired!==plan.actions){plan.actions=repaired;await atomicJSON(path.join(directory,'plan.json'),plan);}
       for(let i=nextIndex;i<plan.actions.length;i++){
         if(job.cancelled){finalStatus='cancelled';job.current='中止';return;}
         if(job.pauseRequested){if(lastSaved!==i)await checkpoint(i);finalStatus='paused';job.current='途中保存しました';return;}
@@ -120,6 +122,7 @@ export class JobRunner {
         if(i===nextIndex)await c.pause(600/options.speed);
         const action=plan.actions[i];job.step=i+1;job.current=action.type+' '+(action.opcode||action.name||action.target||action.input||'');
         const started=Date.now(),result=await c.execute(action);
+        if(recorder?.error)throw recorder.error;
         log.push({step:i+1,action,result:result??null,durationMs:Date.now()-started});
         if(options.checkpointable&&(i+1-lastSaved>=options.checkpointEvery||action.type==='target.select'||(action.type==='tab.select'&&action.tab==='code')||i+1===plan.actions.length||(sceneMode&&currentScene?.to===i+1))){
           await checkpoint(i+1);
@@ -170,7 +173,7 @@ export class JobRunner {
     }finally{
       // This is an uncommitted tail (failed/cancelled action or an idle segment).
       // Keep it for diagnosis, but never join it to the finished video.
-      await recorder?.stop().catch(()=>{});
+      await recorder?.abort().catch(()=>{});
       await atomicJSON(path.join(directory,'log.json'),log);artifact('log.json');
       await c?.close().catch(()=>{});job.controller=null;job.finishedAt=new Date().toISOString();job.status=finalStatus;
       await this.persist(job);
