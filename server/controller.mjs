@@ -1,4 +1,5 @@
 import {chromium} from 'playwright';
+import {DEMO_OPERATIONS,runDemoAction} from './demo-actions.mjs';
 import {readSb3,EMPTY_COSTUME} from './project.mjs';
 
 const categories={event:'events',control:'control',motion:'motion',looks:'looks',sound:'sound',sensing:'sensing',operator:'operators',data:'variables',procedures:'myBlocks',pen:'pen'};
@@ -521,6 +522,7 @@ export class EditorController {
     },id,{polling:'raf',timeout:5000});
   }
   async execute(a) {
+    if(DEMO_OPERATIONS.includes(a.type))return runDemoAction(this,a);
     switch(a.type) {
       case 'tab.select':return this.selectTab(a.tab);
       case 'costume.add':return this.addAsset('costume',a);

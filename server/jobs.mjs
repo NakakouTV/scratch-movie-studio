@@ -31,7 +31,7 @@ export class JobRunner {
         const saved=await readJSON(path.join(directory,'checkpoint.json')).catch(()=>null);
         job.resumable=!!saved&&job.status!=='completed';
         if(saved)job.checkpoint={step:saved.nextIndex,savedAt:saved.savedAt};
-        if(activeJob(job)){job.status='paused';job.current='サーバー停止前の保存地点から再開できます';job.error=undefined;await this.persist(job);}
+        if(activeJob(job)){job.status=job.kind==='cut'?'failed':'paused';job.current=job.kind==='cut'?'撮影が中断されました。保存済み設定で撮り直せます。':'サーバー停止前の保存地点から再開できます';job.error=undefined;await this.persist(job);}
         this.jobs.set(job.id,job);
       }catch(error){if(error.code!=='ENOENT')console.warn(`履歴を読み込めません: ${entry.name}: ${error.message}`);}
     }

@@ -1,4 +1,5 @@
 <!doctype html><html lang="ja"><head><meta charset="utf-8"><title>操作API · Scratch Movie Studio</title><link rel="stylesheet" href="/studio.css"><style>article{max-width:1000px;margin:40px auto;padding:36px;background:white;border:1px solid #e3e8f0;border-radius:14px}pre{background:#f3f5fa;padding:20px;overflow:auto;border-radius:8px;font:13px/1.7 Consolas,monospace}table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;border-bottom:1px solid #e3e8f0;padding:12px}code{font-family:Consolas,monospace}h2{margin-top:28px}p{color:#64728a}article a{font-size:13px}</style></head><body><header><a class="brand" href="/">← Scratch Movie Studio</a><span class="subtle">LOCAL HTTP API · v0.3</span></header><article><h1>アニメーション操作API</h1><p>Base URL: <code>http://127.0.0.1:8601/api</code>。エージェントは含まれません。HTTPから公式エディタを操作できます。命令の戻り値は編集完了後に返ります。</p>
+<h2>独立カット</h2><p><a href="/cuts.html">独立カット画面</a>では、準備を録画せずに実行し、必要な操作だけを撮影できます。<code>POST /cuts</code> に <code>projectId, title, start: "project" / "blank", setup: [], actions: [], framing: {target, block, scale}, endFraming, beforeMs, afterMs, speed</code> を指定します。構図は任意、余白は0〜30000msです。進捗は <code>GET /jobs/{id}</code>、撮り直しは <code>POST /cuts/{id}/retake</code> に <code>{}</code> または変更する項目を渡します。元動画は残し、新しいカットを生成します。元sb3との完成一致検証や途中再開は行いません。実行・マウス操作も収録できます。開始時の素材は読み込み済みです。範囲選択用の制作手順は <code>GET /projects/{id}/cut-plan</code> で取得します。</p>
 <h2>sb3から動画を作る</h2><pre>// JavaScript / Node.js 18+
 const project = await fetch(base + '/projects', {
   method: 'POST',
@@ -56,6 +57,10 @@ POST /sessions/{id}/actions
 <p><code>block.add</code> はパレット内の現在位置を使い、対象がつかめる位置にあればスクロールもカテゴリのクリックも行いません。近い場所（おおむねパレット1画面分以内）や同じカテゴリ内はスクロールだけで移動し、遠い別カテゴリに限ってカテゴリをクリックします。明示的な <code>category.select</code> は指定どおりクリックします。</p>
 <p><code>block.add</code> / <code>block.move</code> の <code>place.after</code>、または <code>place.parent</code> と <code>place.input</code> を指定すると、その接続先だけにスナップします。型が合わなければエラーになります。<code>place.x / y</code> の場合は近くのブロックに自動接続せず配置します。制御は各APIドラッグの終了・失敗時に解除され、通常のマウス操作には残りません。</p>
 <table><thead><tr><th>操作</th><th>主なパラメーター</th></tr></thead><tbody>
+<tr><td>variable.set（実演）</td><td>name または id、scope: global / local、ローカルなら target（省略時は選択中）、value、任意のduration: 0〜60000ms。既存変数へ代入。時間指定時は数値を直線的に変更。入力欄の文字入力ではありません。</td></tr>
+<tr><td>script.run（実演）</td><td>block: スクリプト先頭の元IDまたはsourceId、任意のtarget / isStage。実際にブロックをクリック。既に実行中ならエラー。実行完了を待つ操作ではありません。</td></tr>
+<tr><td>sprite.drag（実演）</td><td>target: オリジナルのスプライト名、x / y: Scratch座標、任意のduration: 0〜60000ms（既定1000）。カーソルでドラッグして座標を確認。重なりや画面外でつかめない場合はエラー。</td></tr>
+<tr><td>stage.view（実演）</td><td>mode: editor / fullscreen。公式の全画面ボタンを操作。全画面でスプライトを動かすにはScratch側でドラッグ可能に設定。編集画面のドラッグは離した時に座標を更新します。</td></tr>
 <tr><td>target.select</td><td>target、ステージなら isStage: true</td></tr>
 <tr><td>tab.select</td><td>tab: code / costumes / sounds（ステージのcostumesは背景）</td></tr>
 <tr><td>costume.add / sound.add</td><td>assetIndex: 元sb3の素材番号（0始まり）、任意のsourceTarget: 素材元のスプライト名</td></tr>

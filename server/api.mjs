@@ -9,8 +9,10 @@ import {projectStructure} from './structure.mjs';
 
 import {JobRunner,publicJob,activeJob} from './jobs.mjs';
 import {normalizeScenes} from './scenes.mjs';
+import {CutRunner,normalizeCut} from './cuts.mjs';
+import {DEMO_OPERATIONS} from './demo-actions.mjs';
 
-export const OPERATIONS=['tab.select','costume.add','costume.select','sound.add','target.select','category.select','variable.create','procedure.create','broadcast.create','block.add','block.input','block.field','block.move','block.delete','workspace.zoom','view.configure','workspace.focus','mouse.move','mouse.click','mouse.down','mouse.up','mouse.wheel','keyboard.type','keyboard.press','project.start','project.stop','wait'];
+export const OPERATIONS=[...DEMO_OPERATIONS,'tab.select','costume.add','costume.select','sound.add','target.select','category.select','variable.create','procedure.create','broadcast.create','block.add','block.input','block.field','block.move','block.delete','workspace.zoom','view.configure','workspace.focus','mouse.move','mouse.click','mouse.down','mouse.up','mouse.wheel','keyboard.type','keyboard.press','project.start','project.stop','wait'];
 export async function apiRouter(root,baseURL) {
   const router=express.Router(),projects=new Map(),sessions=new Map(),jobs=new Map();
   const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res)).catch(next);
@@ -18,6 +20,21 @@ export async function apiRouter(root,baseURL) {
   const project=id=>{const p=projects.get(id);if(!p)throw new Error('プロジェクトがありません。もう一度読み込んでください。');return p;};
   const sessionState=async s=>({...await s.controller.state(),busy:s.busy,recording:!!s.recorder?.accepting,currentAction:s.currentAction??null,lastAction:s.lastAction??null});
   const runner=new JobRunner(root,baseURL,jobs);await runner.hydrate();
+  const cuts=new CutRunner(root,baseURL,jobs);
+  async function startCut(buffer,input,retakeOf){
+    if([...jobs.values()].some(activeJob))throw new Error('別の動画を制作中です。');
+    const recipe=normalizeCut(input,OPERATIONS),id=randomUUID();
+    const job={id,kind:'cut',name:recipe.title,status:'running',step:0,total:recipe.setup.length,current:'カットを準備中',startedAt:new Date().toISOString(),artifacts:[],warnings:[],retakeOf};
+    jobs.set(id,job);
+    try{await runProcess(process.env.FFMPEG_PATH||'ffmpeg',['-version']);await cuts.prepare(job,buffer,recipe);}catch(e){jobs.delete(id);throw e;}
+    cuts.launch(job);return publicJob(job);
+  }
+  router.post('/cuts',asyncRoute(async(req,res)=>res.status(202).json(await startCut(project(req.body.projectId).buffer,req.body))));
+  router.post('/cuts/:id/retake',asyncRoute(async(req,res)=>{
+    const job=jobs.get(req.params.id);if(job?.kind!=='cut')throw new Error('カットがありません。');
+    const directory=cuts.directory(job.id),recipe=JSON.parse(await fs.readFile(path.join(directory,'cut.json'),'utf8'));
+    res.status(202).json(await startCut(await fs.readFile(path.join(directory,'source.sb3')),{...recipe,...req.body},job.id));
+  }));
   router.get('/capabilities',(req,res)=>res.json({version:'0.3.0',editorVersion:'15.1.1',operations:OPERATIONS,extensions:['pen'],video:{width:1920,height:1080,fps:30,format:'mp4'},unsupported:['paint drawing automation','sound waveform editing','cloud sync','hardware extensions'],note:'背景・コスチューム・音は公式のアップロード操作で追加します。スプライト自体は撮影前に準備します。'}));
   router.get('/samples',asyncRoute(async(req,res)=>res.json((await fs.readdir(root)).filter(n=>n.endsWith('.sb3')))));
   async function addProject(buffer,name) {
@@ -34,6 +51,7 @@ export async function apiRouter(root,baseURL) {
     res.json(await addProject(await fs.readFile(path.join(root,name)),name));
   }));
   router.get('/projects/:id/plan',(req,res)=>res.json(project(req.params.id).plan));
+  router.get('/projects/:id/cut-plan',(req,res)=>res.json(buildPlan(project(req.params.id).json)));
   router.get('/projects/:id/structure',(req,res)=>res.json(projectStructure(project(req.params.id).json)));
   router.post('/sessions',asyncRoute(async(req,res)=>{
     if([...jobs.values()].some(j=>['running','encoding'].includes(j.status)))throw new Error('動画を制作中です。完了後にセッションを作成してください。');
@@ -98,6 +116,7 @@ export async function apiRouter(root,baseURL) {
     const outputMode=req.body.outputMode??'full';
     if(!['full','scenes','both'].includes(outputMode))throw new Error('出力形式は full / scenes / both です。');
     const scenes=outputMode==='full'?[]:normalizeScenes(plan,req.body.scenes);
+    if(plan.actions.some(a=>DEMO_OPERATIONS.includes(a.type)))throw new Error('実演用操作は独立カットまたは個別セッションで使用してください。');
     if(outputMode!=='full'&&plan.actions.some(a=>/^(mouse\.|keyboard\.|project\.)/.test(a.type)))throw new Error('場面別出力には、直接のマウス・キー・実行操作を含まない手順を指定してください。');
     if(outputMode==='scenes'&&!scenes.some(s=>s.enabled)&&demoSeconds===0)throw new Error('出力する場面を1つ以上選択してください。');
     jobs.set(id,job);

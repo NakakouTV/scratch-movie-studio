@@ -37,12 +37,14 @@ async function refreshPreview(){if(previewBusy||!jobId)return;previewBusy=true;t
 async function poll(){
   try {
     const j=await api('/jobs/'+jobId);$('state').className='pill '+j.status;$('state').textContent={running:'制作中',encoding:'書き出し中',completed:'完成',failed:'確認が必要',cancelled:'中止',paused:'一時停止'}[j.status]||j.status;
+    if(j.kind==='cut')$('verification').textContent='独立カットは部分的な制作・実演を許すため、元sb3との完成一致比較は行いません。撮り直しは独立カット画面から行えます。';
     const active=['running','encoding'].includes(j.status);
     $('build').disabled=active||!project;$('cancel').hidden=!active;
     $('pause').hidden=!active||!j.checkpointable||j.phase==='finishing';$('pause').disabled=!!j.pauseRequested;
     $('pause').textContent=j.pauseRequested?'操作の完了後に保存します…':'途中保存して一時停止';
     $('resume').hidden=active||!j.resumable;
     $('checkpoint').textContent=j.checkpoint?`${j.checkpoint.step}操作目まで保存済み（${new Date(j.checkpoint.savedAt).toLocaleTimeString('ja-JP')}）。再開時はその次から続けます。`:j.checkpointable===false?'直接のマウス・キー入力を含む手順は途中再開に対応していません。':'最初の保存地点を準備中です。';
+    if(j.kind==='cut')$('checkpoint').textContent='独立カットは保存した設定から準備をやり直して撮り直せます。';
     $('current').textContent=[j.currentScene,j.current].filter(Boolean).join(' · ');$('count').textContent=`${j.step} / ${j.total} 操作`;$('progress').max=j.total||1;$('progress').value=j.step;
     document.querySelector('#plan li.active')?.classList.remove('active');$('action-'+(j.step-1))?.classList.add('active');
     if(['completed','failed','cancelled','paused'].includes(j.status)){
