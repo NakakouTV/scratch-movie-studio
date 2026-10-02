@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {EditorController} from './controller.mjs';
+import {EditorController,subtitleMargin} from './controller.mjs';
 import {Recorder,runProcess} from './recorder.mjs';
 import {readSb3,blankProject,buildPlan} from './project.mjs';
 import {projectStructure} from './structure.mjs';
@@ -56,7 +56,7 @@ export async function apiRouter(root,baseURL) {
   router.post('/sessions',asyncRoute(async(req,res)=>{
     if([...jobs.values()].some(j=>['running','encoding'].includes(j.status)))throw new Error('動画を制作中です。完了後にセッションを作成してください。');
     const p=project(req.body.projectId),id=randomUUID();
-    const controller=await new EditorController(baseURL,{headed:!!req.body.headed,timing:req.body.timing,minScale:req.body.minScale}).open();
+    const controller=await new EditorController(baseURL,{headed:!!req.body.headed,timing:req.body.timing,minScale:req.body.minScale,subtitleMargin:req.body.subtitleMargin}).open();
     try {await controller.setAssetSource(p.buffer);await controller.load(p.buffer);if(req.body.blank)await controller.load(await blankProject(p.buffer,{assets:!!req.body.animateAssets}));}catch(e){await controller.close();throw e;}
     const s={id,controller,busy:false,log:[],directory:path.join(root,'outputs',id)};sessions.set(id,s);
     res.json({id,state:await sessionState(s)});
@@ -110,6 +110,7 @@ export async function apiRouter(root,baseURL) {
     const speed=Number(req.body.speed||1);if(!Number.isFinite(speed)||speed<0.25||speed>10)throw new Error('速度は0.25〜10です。');
     const id=randomUUID(),job={id,name:p.name,status:'running',step:0,total:plan.actions.length,current:'準備中',startedAt:new Date().toISOString(),warnings:plan.warnings||[],cancelled:false,artifacts:[]};
     const minScale=Number(req.body.minScale??0.8),checkpointEvery=Number(req.body.checkpointEvery??25),demoSeconds=Number(req.body.demoSeconds??3);
+    const margin=subtitleMargin(req.body.subtitleMargin);
     if(!Number.isFinite(minScale)||minScale<0.3||minScale>1.5)throw new Error('倍率下限は0.3〜1.5です。');
     if(!Number.isInteger(checkpointEvery)||checkpointEvery<1||checkpointEvery>100)throw new Error('保存間隔は1〜100操作です。');
     if(!Number.isFinite(demoSeconds)||demoSeconds<0||demoSeconds>30)throw new Error('実演時間は0〜30秒です。');
@@ -120,7 +121,7 @@ export async function apiRouter(root,baseURL) {
     if(outputMode!=='full'&&plan.actions.some(a=>/^(mouse\.|keyboard\.|project\.)/.test(a.type)))throw new Error('場面別出力には、直接のマウス・キー・実行操作を含まない手順を指定してください。');
     if(outputMode==='scenes'&&!scenes.some(s=>s.enabled)&&demoSeconds===0)throw new Error('出力する場面を1つ以上選択してください。');
     jobs.set(id,job);
-    try{if(record)await runProcess(process.env.FFMPEG_PATH||'ffmpeg',['-version']);await runner.prepare(job,p.buffer,plan,{record,speed,minScale,checkpointEvery,demoSeconds,outputMode,scenes});}catch(e){jobs.delete(id);throw e;}
+    try{if(record)await runProcess(process.env.FFMPEG_PATH||'ffmpeg',['-version']);await runner.prepare(job,p.buffer,plan,{record,speed,minScale,subtitleMargin:margin,checkpointEvery,demoSeconds,outputMode,scenes});}catch(e){jobs.delete(id);throw e;}
     res.status(202).json(publicJob(job));runner.launch(job);
   }));
   router.get('/jobs',(req,res)=>res.json([...jobs.values()].sort((a,b)=>b.startedAt.localeCompare(a.startedAt)).map(publicJob)));

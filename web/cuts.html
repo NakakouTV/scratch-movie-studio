@@ -2,6 +2,7 @@
 <label>元のsb3 <input id="source" type="file" accept=".sb3"></label><span id="sourceName"></span>
 <fieldset><legend>自動制作手順から切り出す</legend><p>指定範囲より前の操作は録画せずに準備します。入力範囲は下の制作手順で確認してください。</p><label>開始 <input id="from" type="number" value="1" min="1"></label><label>終了 <input id="to" type="number" value="1" min="1"></label><button id="range" disabled>この範囲から設定を作る</button><details><summary>制作手順</summary><ol id="plan"></ol></details></fieldset>
 <label>カット名 <input id="title" value="カット1" maxlength="200"></label><label>前の余白（秒）<input id="before" type="number" min="0" max="30" step="0.1" value="0.5"></label><label>後の余白（秒）<input id="after" type="number" min="0" max="30" step="0.1" value="1"></label>
+<label>字幕用の余白 <select id="subtitleMargin"><option value="220" selected>下220pxを空ける</option><option value="300">下300pxを空ける</option><option value="0">なし</option></select></label><p>ブロックの操作対象が下の余白へ近づくと、中央付近へスクロールします。</p>
 <p>構図を指定する場合は、下の <code>framing</code> に対象名・ブロックID・倍率を指定します。<code>endFraming</code> は操作後の構図です。指定しなければ操作に必要な画面移動に従います。</p>
 <details open><summary>カット設定（JSON・編集可能）</summary><textarea id="recipe" aria-label="カット設定" spellcheck="false"></textarea><p>start: project は読み込んだ状態、blank はブロックなしの状態。setup は準備、actions は撮影する操作です。画像と音は初めから読み込み済みです。</p></details>
 <button id="render" class="primary" disabled>このカットを撮影</button><button id="cancel" hidden>撮影を中止</button><p id="status" role="status">sb3を読み込んでください。</p><p id="error" role="alert" class="notice" hidden></p>

@@ -96,7 +96,7 @@ export class JobRunner {
     };
     try{
       artifact('plan.json');
-      c=job.controller=await new EditorController(this.baseURL,{minScale:options.minScale??0.8,timing:{move:450/options.speed,drag:750/options.speed,type:75/options.speed,pause:200/options.speed}}).open();
+      c=job.controller=await new EditorController(this.baseURL,{minScale:options.minScale??0.8,subtitleMargin:options.subtitleMargin,timing:{move:450/options.speed,drag:750/options.speed,type:75/options.speed,pause:200/options.speed}}).open();
       if(resume){
         const saved=await readJSON(path.join(directory,'checkpoint.json'));
         expected=await readJSON(path.join(directory,'expected.json'));

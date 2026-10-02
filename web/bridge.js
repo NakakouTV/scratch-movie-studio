@@ -91,7 +91,7 @@
       return {ready: !!w, target: this.vm?.editingTarget?.getName(),
         selectedTarget:{name:this.vm?.editingTarget?.getName(),isStage:!!this.vm?.editingTarget?.isStage},
         selectedTab:['code','costumes','sounds'][gui?.editorTab?.activeTabIndex]??null,
-        workspace:w?{scale:w.scale,scrollX:w.scrollX,scrollY:w.scrollY,dragging:w.isDragging()}:null,
+        workspace:w?{scale:w.scale,scrollX:w.scrollX,scrollY:w.scrollY,dragging:w.isDragging(),subtitleMargin:this.subtitleMargin}:null,
         running:!!gui?.vmStatus?.running,
         modal:modalType||dialog?{type:modalType||'dialog',label:dialog?.getAttribute('aria-label')||null}:null,
         fieldEditorOpen:fieldEditor,

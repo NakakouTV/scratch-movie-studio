@@ -3,12 +3,16 @@ import {DEMO_OPERATIONS,runDemoAction} from './demo-actions.mjs';
 import {readSb3,EMPTY_COSTUME} from './project.mjs';
 
 const categories={event:'events',control:'control',motion:'motion',looks:'looks',sound:'sound',sensing:'sensing',operator:'operators',data:'variables',procedures:'myBlocks',pen:'pen'};
+export function subtitleMargin(value=220){
+  if(!Number.isInteger(value)||value<0||value>400)throw new Error('字幕用の余白は0〜400pxの整数です。');
+  return value;
+}
 export class EditorController {
   constructor(baseURL,options={}) {
     this.baseURL=baseURL;this.options=options;
     this.timing={move:450,drag:750,type:75,pause:200,...options.timing};
     this.aliases=new Map();this.procedures=new Map();this.variableRefs=new Map();this.broadcastNames=new Map();this.position={x:600,y:500};
-    this.minScale=options.minScale??0.8;this.activeTab='code';
+    this.minScale=options.minScale??0.8;this.subtitleMargin=subtitleMargin(options.subtitleMargin);this.activeTab='code';
   }
   async open() {
     this.browser=await chromium.launch({channel:process.env.BROWSER_CHANNEL||'chrome',headless:!this.options.headed,args:['--no-proxy-server','--autoplay-policy=no-user-gesture-required']});
@@ -83,10 +87,10 @@ export class EditorController {
     for(const b of loaded)this.aliases.set(`${b.target}\0${b.sourceId}`,b.id);
     await this.configureView({minScale:this.minScale});
   }
-  async configureView({minScale=this.minScale}={}) {
+  async configureView({minScale=this.minScale,subtitleMargin:margin=this.subtitleMargin}={}) {
     if(!Number.isFinite(minScale)||minScale<0.3||minScale>1.5)throw new Error('倍率下限は0.3〜1.5です。');
-    this.minScale=minScale;
-    await this.page.evaluate(scale=>{studio.minScale=scale;studio.ensureReadable();},minScale);
+    margin=subtitleMargin(margin);this.minScale=minScale;this.subtitleMargin=margin;
+    await this.page.evaluate(({scale,margin})=>{studio.minScale=scale;studio.subtitleMargin=margin;studio.ensureReadable();},{scale:minScale,margin});
   }
   async checkpoint() {
     await this.page.keyboard.press('Escape');
@@ -102,7 +106,7 @@ export class EditorController {
         const input=Object.entries(t.blocks.getBlock(b.parent)?.inputs||{}).find(([,v])=>v.block===b.id)?.[0];
         return input?[{target:t.getName(),id:b.id,parent:b.parent,input}]:[];
       })));
-    return {version:1,editorVersion:'15.1.1',view,tab:this.activeTab,minScale:this.minScale,position:this.position,
+    return {version:1,editorVersion:'15.1.1',view,tab:this.activeTab,minScale:this.minScale,subtitleMargin:this.subtitleMargin,position:this.position,
       reporters,
       maps:Object.fromEntries(['aliases','procedures','variableRefs','broadcastNames','callArgs'].map(k=>[k,[...(this[k]||new Map())]]))};
   }
@@ -126,7 +130,7 @@ export class EditorController {
       const target=key.slice(0,key.indexOf('\0')),restored=reporterIds.get(`${target}\0${id}`);
       if(restored)this.aliases.set(key,restored);
     }
-    await this.configureView({minScale:state.minScale});
+    await this.configureView({minScale:state.minScale,subtitleMargin:state.subtitleMargin??this.subtitleMargin});
     if(state.view.category)await this.category(state.view.category);
     await this.page.evaluate(v=>{const w=studio.workspace;w.setScale(v.scale);w.scroll(v.x,v.y);const f=w.getFlyout().getWorkspace();f.scroll(f.scrollX,v.flyoutY);},state.view);
     await this.selectTab(state.tab||'code');
@@ -476,7 +480,7 @@ export class EditorController {
     // Native clone/focus may have scrolled the workspace at gesture start.
     dest=await this.destination(place,source);
     const view=await this.page.evaluate(()=>({area:studio.codeArea(),x:studio.workspace.scrollX,y:studio.workspace.scrollY}));
-    const end={x:Math.max(view.area.left+30,Math.min(view.area.right-30,dest.x)),y:Math.max(view.area.top+30,Math.min(view.area.bottom-30,dest.y))};
+    const end={x:Math.max(view.area.left+30,Math.min(view.area.right-30,dest.x)),y:this.subtitleMargin>0&&dest.y>view.area.bottom-80?(view.area.top+view.area.bottom)/2:Math.max(view.area.top+30,Math.min(view.area.bottom-30,dest.y))};
     const pan={x:end.x-dest.x,y:end.y-dest.y};
     const duration=Math.max(this.timing.drag,Math.min(6000,this.timing.drag*Math.sqrt(1+Math.hypot(pan.x,pan.y)/500)));
     const start={...this.position},steps=Math.max(1,Math.ceil(duration/33));

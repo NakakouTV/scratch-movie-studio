@@ -14,7 +14,7 @@ const job = await fetch(base + '/jobs', {
 // GET /jobs/{id} で進捗と成果物URLを取得</pre>
 <p>標準では背景・コスチューム・音の追加も録画します。素材を準備済みにする場合は <code>animateAssets: false</code> をジョブに指定します。</p>
 <p>自動生成する手順では、入力欄へ別のブロックを入れる場合、隠れる数値・文字・色の定数を元sb3の値へ書き換えず、パレットの初期値を保ちます。実際に使う定数や、他の選択肢に影響する対象メニュー等は設定します。完成比較は有効な接続と値を比較するため、隠れた既定値の違いで失敗にはしません。この省略は新しく生成する手順に適用されます。保存済みの手順や、明示的な <code>block.input</code> 命令は引き続きその入力を実行します。</p>
-<h2>場面別の動画出力</h2>
+<h2>字幕用の余白</h2><p>ジョブ・セッション・独立カット作成時の <code>subtitleMargin</code> は初期値220px、0〜400の整数です。画面下の余白へブロックの配置先や入力欄が近づくと、コード領域の中央付近へ自動スクロールします。パレットのつかみ位置も余白を避けます。<code>0</code> で無効にできます。セッション中は <code>{"type":"view.configure","subtitleMargin":220}</code> で変更でき、途中保存・再開と撮り直しでは設定を引き継ぎます。動画サイズとScratch内の配置座標は維持します。直接の <code>mouse.*</code> 操作には適用しません。</p><h2>場面別の動画出力</h2>
 <p>ジョブ作成時の <code>outputMode</code> に <code>full</code>（全体のみ・APIの初期値）、<code>scenes</code>（場面別のみ）、<code>both</code>（両方）を指定します。管理画面の初期値は「全体＋場面別」です。MP4生成を無効にした場合、動画は出力しません。</p>
 <p>自動手順の <code>plan.scenes</code> は、対象ごとの素材追加、変数・リスト、定義作成、各スクリプトの組み立てに分かれます。定義は呼び出しより先に作成するため、「定義の作成」と「定義の中の処理」は別の場面です。完成後の実演は <code>demoSeconds &gt; 0</code> のとき最後の場面になります。</p>
 <pre>POST /jobs
@@ -74,7 +74,7 @@ POST /sessions/{id}/actions
 <tr><td>block.input</td><td>block、input、value</td></tr>
 <tr><td>block.field</td><td>block、field、value、必要に応じて input</td></tr>
 <tr><td>block.delete</td><td>block</td></tr>
-<tr><td>view.configure</td><td>minScale: 0.3〜1.5（初期値0.8）</td></tr>
+<tr><td>view.configure</td><td>minScale: 0.3〜1.5（初期値0.8）、subtitleMargin: 0〜400pxの整数（初期値220、0で無効）</td></tr>
 <tr><td>workspace.focus / workspace.zoom</td><td>block / scale</td></tr>
 <tr><td>mouse.move / mouse.click</td><td>x、y（画面座標）、duration / button</td></tr>
 <tr><td>mouse.down / mouse.up / mouse.wheel</td><td>ホイール時 dx、dy</td></tr>
@@ -94,7 +94,7 @@ const actions = [target.selectAction,
 <p><code>GET /sessions/{id}/state</code>（従来の <code>GET /sessions/{id}</code> も同じ内容）は、画面を動かさずに現在の状態を返します。</p>
 <table><tbody>
 <tr><td>selectedTarget / selectedTab</td><td>対象名・isStage、code / costumes / sounds</td></tr>
-<tr><td>workspace</td><td>scale、scrollX、scrollY、dragging</td></tr>
+<tr><td>workspace</td><td>scale、scrollX、scrollY、subtitleMargin、dragging</td></tr>
 <tr><td>modal / fieldEditorOpen</td><td>表示中のダイアログのtype・label（なければnull）、入力欄やドロップダウンが開いているか</td></tr>
 <tr><td>running / busy / recording</td><td>Scratch実行中、API編集操作中、録画フレーム収集中。MP4変換中はrecordingがfalseになります。</td></tr>
 <tr><td>currentAction / lastAction</td><td>実行中の命令／最後に完了した命令。sequence、action、startedAt。lastActionにはcompletedAt、successとresultまたはerror。まだなければnull。</td></tr>

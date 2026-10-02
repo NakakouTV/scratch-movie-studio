@@ -2,10 +2,11 @@
 // underneath the flyout, scrollbars or zoom controls; visibility alone is not a hit test.
 window.installStudioGeometry=studio=>{
   studio.minScale=0.8;
+  studio.subtitleMargin=220;
   studio.ensureReadable=()=>{const w=studio.workspace;if(w&&w.scale<studio.minScale)w.setScale(studio.minScale);};
   studio.codeArea=()=>{
     const w=studio.workspace,r=studio.box(w.getParentSvg()),m=w.getMetrics();
-    const area={left:Math.max(0,r.x+m.absoluteLeft)+24,top:Math.max(0,r.y+m.absoluteTop)+24,right:Math.min(innerWidth,r.x+r.width)-30,bottom:Math.min(innerHeight,r.y+r.height)-30};
+    const area={left:Math.max(0,r.x+m.absoluteLeft)+24,top:Math.max(0,r.y+m.absoluteTop)+24,right:Math.min(innerWidth,r.x+r.width)-30,bottom:Math.min(innerHeight-studio.subtitleMargin,r.y+r.height)-30};
     for(const el of w.getParentSvg().querySelectorAll('.blocklyZoom')){
       const z=studio.box(el);if(z.width&&z.height)area.right=Math.min(area.right,z.x-24);
     }
@@ -37,7 +38,7 @@ window.installStudioGeometry=studio=>{
     const w=flyout?studio.workspace.getFlyout().getWorkspace():studio.workspace,b=w.getBlockById(id);
     if(!b)throw new Error('ドラッグ元のブロックがありません。');
     const root=b.getSvgRoot(),r=studio.box(b.pathObject?.svgPath||root),scale=w.scale;
-    const viewport=studio.box(w.getParentSvg()),a=flyout?{left:viewport.x+3,right:viewport.x+viewport.width-12,top:viewport.y+3,bottom:viewport.y+viewport.height-12}:studio.codeArea();
+    const viewport=studio.box(w.getParentSvg()),a=flyout?{left:viewport.x+3,right:viewport.x+viewport.width-12,top:viewport.y+3,bottom:Math.min(innerHeight-studio.subtitleMargin,viewport.y+viewport.height)-12}:studio.codeArea();
     let grab=null;
     const canGrab=p=>{
       if(p.x<a.left||p.x>a.right||p.y<a.top||p.y>a.bottom)return false;
@@ -67,7 +68,7 @@ window.installStudioGeometry=studio=>{
     const f=studio.workspace.getFlyout(),w=f.getWorkspace(),b=w.getBlockById(id);
     if(!b)throw new Error('パレットのブロックが変わりました。');
     const r=studio.box(b.pathObject?.svgPath||b.getSvgRoot()),v=studio.box(w.getParentSvg());
-    const top=v.y+16,bottom=Math.min(innerHeight,v.y+v.height)-24,height=Math.min(r.height,40*w.scale);
+    const top=v.y+16,bottom=Math.min(innerHeight-studio.subtitleMargin,v.y+v.height)-24,height=Math.min(r.height,40*w.scale);
     const delta=r.y<top?r.y-top:r.y+height>bottom?r.y+height-bottom:0;
     const selected=studio.workspace.getToolbox().getSelectedItem();
     return {visible:!!studio.dragSource(id,true).grab,near:Math.abs(delta)<=Math.max(100,bottom-top),

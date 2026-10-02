@@ -28,7 +28,7 @@ api('/samples').then(names=>names.forEach(n=>{const o=document.createElement('op
 $('build').onclick=async()=>{
   try {
     clearError();$('build').disabled=true;$('cancel').disabled=false;$('artifacts').replaceChildren();$('verification').className='muted';$('verification').textContent='再構築後に元のプログラムと比較します。';
-    const job=await api('/jobs',json({projectId:project.id,speed:Number($('speed').value),minScale:Number($('minScale').value),demoSeconds:Number($('demoSeconds').value),record:$('record').checked,outputMode:$('outputMode').value,scenes:sceneSelection()}));
+    const job=await api('/jobs',json({projectId:project.id,speed:Number($('speed').value),minScale:Number($('minScale').value),subtitleMargin:Number($('subtitleMargin').value),demoSeconds:Number($('demoSeconds').value),record:$('record').checked,outputMode:$('outputMode').value,scenes:sceneSelection()}));
     await watchJob(job.id);await refreshHistory();
   }catch(e){error(e);$('build').disabled=false;}
 };

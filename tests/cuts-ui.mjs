@@ -13,7 +13,10 @@ try{
  await page.goto(base+'/cuts.html');await page.locator('#source').setInputFiles('PEN動作確認.sb3');await page.waitForFunction(()=>!document.getElementById('range').disabled);
  await page.locator('#from').fill('2');await page.locator('#to').fill('2');await page.locator('#range').click();
  const recipe=JSON.parse(await page.locator('#recipe').inputValue());assert.equal(recipe.setup.length,1);assert.equal(recipe.actions.length,1);recipe.speed=10;await page.locator('#recipe').fill(JSON.stringify(recipe,null,2));await page.locator('#before').fill('0.1');await page.locator('#after').fill('0.1');
+ assert.equal(await page.locator('#subtitleMargin').inputValue(),'220');await page.locator('#subtitleMargin').selectOption('300');
  await page.locator('#render').click();await page.waitForFunction(()=>!document.getElementById('movie').hidden,null,{timeout:90000});assert.equal(await page.locator('#error').isVisible(),false);
+ const jobs=await (await page.request.get(base+'/api/jobs')).json(),cut=jobs.find(j=>j.status==='completed');
+ const savedRecipe=await (await page.request.get(base+cut.artifacts.find(a=>a.name==='cut.json').url)).json();assert.equal(savedRecipe.subtitleMargin,300);
  const url=await page.locator('#movie').getAttribute('src');assert.equal((await page.request.get(base+url)).status(),200);
  await page.locator('#movie').evaluate(async video=>{await video.play();});
  await page.waitForFunction(()=>document.getElementById('movie').currentTime>0.1);

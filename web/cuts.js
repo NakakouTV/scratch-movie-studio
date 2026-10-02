@@ -18,7 +18,7 @@ $('range').onclick=()=>{try{
   if(!Number.isInteger(from)||!Number.isInteger(to)||from<1||to<from||to>project.plan.actions.length)throw new Error('制作手順内の開始・終了番号を指定してください。');
   $('recipe').value=JSON.stringify({start:'blank',setup:project.plan.actions.slice(0,from-1),actions:project.plan.actions.slice(from-1,to)},null,2);
 }catch(e){error(e);}};
-$('render').onclick=async()=>{try{clear();const recipe=JSON.parse($('recipe').value);await watch((await api('/cuts',json({...recipe,projectId:project.id,title:$('title').value,beforeMs:Number($('before').value)*1000,afterMs:Number($('after').value)*1000}))).id);}catch(e){error(e);}};
+$('render').onclick=async()=>{try{clear();const recipe=JSON.parse($('recipe').value);await watch((await api('/cuts',json({...recipe,projectId:project.id,title:$('title').value,subtitleMargin:Number($('subtitleMargin').value),beforeMs:Number($('before').value)*1000,afterMs:Number($('after').value)*1000}))).id);}catch(e){error(e);}};
 async function history(){const jobs=(await api('/jobs')).filter(j=>j.kind==='cut');const selected=$('history').value;$('history').replaceChildren(...jobs.map(j=>new Option(`${j.name} · ${j.status} · ${new Date(j.startedAt).toLocaleString('ja-JP')}`,j.id)));if(jobs.some(j=>j.id===selected))$('history').value=selected;return jobs;}
 async function poll(){try{
   const j=await api('/jobs/'+current),active=['running','encoding'].includes(j.status);
