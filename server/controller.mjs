@@ -525,7 +525,12 @@ export class EditorController {
         (vm.next??null)===(b.getNextBlock()?.id??null);
     },id,{polling:'raf',timeout:5000});
   }
+  async hideCursor() {if(this.page&&!this.page.isClosed())await this.page.evaluate(()=>studio.hideCursor());}
   async execute(a) {
+    try{return await this.performAction(a);}
+    finally{await this.hideCursor();}
+  }
+  async performAction(a) {
     if(DEMO_OPERATIONS.includes(a.type))return runDemoAction(this,a);
     switch(a.type) {
       case 'tab.select':return this.selectTab(a.tab);

@@ -59,9 +59,9 @@ export class CutRunner extends JobRunner {
       // Saving the start project is diagnostic; retakes replay preparation from
       // the original source so runtime state and aliases are never assumed saved.
       await fs.writeFile(path.join(directory,'start.sb3'),await c.save());artifact('start.sb3');
-      await c.move(1880,1050,0);await c.page.screenshot({path:path.join(directory,'start.jpg')});artifact('start.jpg');
+      await c.hideCursor();await c.page.screenshot({path:path.join(directory,'start.jpg')});artifact('start.jpg');
       recorder=new Recorder(c.page,directory);await recorder.start();await hold(recipe.beforeMs);
-      await perform(recipe.actions,'capture');await frame(recipe.endFraming);await c.move(1880,1050);await hold(recipe.afterMs);check();
+      await perform(recipe.actions,'capture');await frame(recipe.endFraming);await c.hideCursor();await hold(recipe.afterMs);check();
       await recorder.stop();job.status='encoding';job.current='カットを保存中';await recorder.encode();check();
       await fs.writeFile(path.join(directory,'result.sb3'),await c.save());artifact('result.sb3');
       job.preview=path.join(directory,'preview.jpg');await c.page.screenshot({path:job.preview});artifact('preview.jpg');artifact('movie.mp4');artifact('recording.json');

@@ -72,7 +72,8 @@
         return !b.isShadow();
       });
     },
-    cursor(x,y) { document.getElementById('movie-cursor').style.transform = `translate(${x}px,${y}px)`; },
+    cursor(x,y) { const el=document.getElementById('movie-cursor');el.style.transform=`translate(${x}px,${y}px)`;el.style.visibility='visible'; },
+    hideCursor() { document.getElementById('movie-cursor').style.visibility='hidden'; },
     async load(base64) {
       await this.vm.loadProject(Uint8Array.from(atob(base64), c => c.charCodeAt(0)));
     },
@@ -111,5 +112,6 @@
     clearInterval(init);
   }, 50);
   // Blockly prevents compatibility mouse events during a pointer gesture.
-  document.addEventListener('pointermove', e => studio.cursor(e.clientX,e.clientY), true);
+  for(const event of ['pointermove','pointerdown','pointerup','wheel'])
+    document.addEventListener(event, e => studio.cursor(e.clientX,e.clientY), true);
 })();

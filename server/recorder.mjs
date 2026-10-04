@@ -92,7 +92,11 @@ export class Recorder {
     });
     await this.cdp.send('Page.stopScreencast');await this.cdp.detach();this.cdp=null;
     this.capturedDuration=Math.max(1/30,audio.end-this.origin,this.frames.at(-1).time);
-    this.sampleUntil(this.capturedDuration);
+    // Screencast delivery may lag behind the final DOM update (including the
+    // hidden cursor). End with the current painted screen, even on an instant
+    // stop, and retain at least one 30fps frame of it.
+    this.lastImage=await this.page.screenshot({type:'jpeg',quality:90});
+    this.sampleUntil(Math.max(this.capturedDuration,(this.frameCount+1)/30));
     await this.queue;
     if(this.error)throw this.error;
     this.encoder.stdin.end();await this.finished;
