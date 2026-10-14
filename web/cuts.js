@@ -9,6 +9,17 @@ $('source').onchange=async e=>{try{
   clear();const file=e.target.files[0];if(!file)return;
   project=await api('/projects',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name)},body:file});
   project.plan=await api(`/projects/${project.id}/cut-plan`);
+  const structure=await api(`/projects/${project.id}/structure`);
+  const boardTarget=structure.targets.find(t=>!t.isStage&&t.blocks.some(b=>b.opcode==='control_start_as_clone'))??structure.targets.find(t=>!t.isStage);
+  const boardLists=structure.targets.flatMap(t=>t.lists.map(v=>({...v,target:t.name}))),boardList=boardLists.find(v=>v.scope==='global'&&v.name==='マスの状態')??boardLists.find(v=>v.scope==='global')??boardLists[0];
+  project.boardExample=boardTarget&&boardList?{target:boardTarget.name,clones:boardTarget.blocks.some(b=>b.opcode==='control_start_as_clone'),list:{name:boardList.name,id:boardList.id,scope:boardList.scope,target:boardList.target}}:null;
+  $('boardSample').disabled=!project.boardExample;
+  project.monitorExamples=structure.targets.flatMap(t=>[...t.variables.map(v=>({...v,kind:'variable'})),...t.lists.map(v=>({...v,kind:'list'}))].map(v=>({kind:v.kind,name:v.name,id:v.id,scope:v.scope,target:t.name})));
+  $('monitorTarget').replaceChildren(...project.monitorExamples.map((v,i)=>new Option(`${v.scope==='global'?'全体':v.target} / ${v.kind==='list'?'リスト':'変数'} / ${v.name}`,String(i))));
+  const firstList=project.monitorExamples.findIndex(v=>v.kind==='list');if(firstList>=0)$('monitorTarget').value=String(firstList);
+  $('monitorTarget').disabled=$('monitorSample').disabled=!project.monitorExamples.length;
+  $('paintTarget').replaceChildren(...structure.targets.map(t=>{const option=new Option(t.name,t.name);option.dataset.isStage=String(t.isStage);return option;}));
+  $('paintTarget').value=structure.targets.find(t=>!t.isStage)?.name??structure.targets[0].name;$('paintTarget').disabled=false;$('paintSample').disabled=false;
   $('sourceName').textContent=file.name;$('render').disabled=false;$('range').disabled=false;$('to').value=project.plan.actions.length;
   $('plan').replaceChildren(...project.plan.actions.map(a=>{const li=document.createElement('li');li.textContent=`${a.type} ${a.opcode||a.target||a.name||''} ${a.sourceId||''}`;return li;}));
   $('status').textContent='範囲またはカット設定を指定してください。';
@@ -19,6 +30,29 @@ $('range').onclick=()=>{try{
   $('recipe').value=JSON.stringify({start:'blank',setup:project.plan.actions.slice(0,from-1),actions:project.plan.actions.slice(from-1,to)},null,2);
 }catch(e){error(e);}};
 $('render').onclick=async()=>{try{clear();const recipe=JSON.parse($('recipe').value);await watch((await api('/cuts',json({...recipe,projectId:project.id,title:$('title').value,subtitleMargin:Number($('subtitleMargin').value),beforeMs:Number($('before').value)*1000,afterMs:Number($('after').value)*1000}))).id);}catch(e){error(e);}};
+$('paintSample').onclick=()=>{
+  clear();$('title').value='空マス・白マス・黒マスの作画';
+  $('recipe').value=JSON.stringify({start:'blank',clearAssets:true,setup:[{type:'target.select',target:$('paintTarget').value,isStage:$('paintTarget').selectedOptions[0].dataset.isStage==='true'}],actions:[
+   {type:'costume.create',name:'空マス'},{type:'paint.view',scale:4},
+   {type:'paint.shape',shape:'rectangle',x:-12,y:12,width:24,height:24,fill:'#008000',stroke:'#000000',strokeWidth:0},
+   {type:'paint.style',strokeWidth:4},{type:'costume.duplicate',name:'白マス'},{type:'paint.view',scale:4},
+   {type:'paint.shape',shape:'ellipse',x:-10,y:10,width:20,height:20,fill:'#ffffff',stroke:null,strokeWidth:0},
+   {type:'costume.duplicate',name:'黒マス'},{type:'paint.select',index:1},{type:'paint.style',fill:'#000000'}
+  ]},null,2);
+ };
+$('boardSample').onclick=()=>{
+ const b=project.boardExample;if(!b)return;clear();$('title').value='盤面クリックの実演';
+ const conditions=[{type:'list',...b.list,property:'length',value:64}];if(b.clones)conditions.push({type:'cloneCount',target:b.target,value:64});
+ $('recipe').value=JSON.stringify({start:'project',setup:[{type:'project.start'},{type:'runtime.wait',conditions,timeoutMs:10000},{type:'board.configure',rows:8,columns:8,cellWidth:24,cellHeight:24,target:b.target}],actions:[{type:'board.click',row:1,column:1},{type:'runtime.wait',conditions:[{type:'list',...b.list,index:1,value:'黒マス'}],timeoutMs:10000}]},null,2);
+};
+$('monitorSample').onclick=()=>{try{
+ const ref=project.monitorExamples[Number($('monitorTarget').value)];if(!ref)return;
+ const index=Number($('monitorIndex').value);if(ref.kind==='list'&&(!Number.isInteger(index)||index<1||index>200000))throw new Error('リストの項目番号は1以上の整数です。');
+ clear();$('title').value='モニターの表示・配置';
+ const setup=$('monitorStart').checked?[{type:'project.start'},...(ref.kind==='list'?[{type:'runtime.wait',conditions:[{type:'list',scope:ref.scope,target:ref.target,id:ref.id,property:'length',op:'gte',value:index}],timeoutMs:10000}]:[])]:[];
+ const actions=[{type:'monitor.show',...ref},{type:'monitor.layout',...ref,x:12,y:50,...(ref.kind==='list'?{width:180,height:220}:{mode:'default'})},...(ref.kind==='list'?[{type:'monitor.scroll',...ref,index,align:'center',duration:600}]:[]),{type:'wait',ms:1000}];
+ $('recipe').value=JSON.stringify({start:'project',setup,actions},null,2);
+}catch(e){error(e);}};
 async function history(){const jobs=(await api('/jobs')).filter(j=>j.kind==='cut');const selected=$('history').value;$('history').replaceChildren(...jobs.map(j=>new Option(`${j.name} · ${j.status} · ${new Date(j.startedAt).toLocaleString('ja-JP')}`,j.id)));if(jobs.some(j=>j.id===selected))$('history').value=selected;return jobs;}
 async function poll(){try{
   const j=await api('/jobs/'+current),active=['running','encoding'].includes(j.status);

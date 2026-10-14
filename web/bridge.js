@@ -29,6 +29,10 @@
     get workspace() { return this.blocks?.workspace; },
     get SB() { return this.blocks?.ScratchBlocks; },
     get procedureDialog() { return components().find(c => c.mutationRoot && c.workspace); },
+    get paintTool() {return components().find(c=>c.tool?._scope?.view)?.tool;},
+    get paintCanvas() {return components().find(c=>c.canvas&&c.importImage&&c.switchCostume);},
+    get paintColorIndicator() {return components().find(c=>c.handleChangeColor&&c.props.colorModalVisible);},
+    monitorComponent(id) {return components().find(c=>c.props?.id===id&&c.handleDragEnd&&c.setElement);},
     box(el) { const r=el.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height}; },
     point(ws,x,y) { const p=new DOMPoint(x,y).matrixTransform(ws.getCanvas().getScreenCTM());return {x:p.x,y:p.y}; },
     connectionPoint(c) {return this.point(c.getSourceBlock().workspace,c.x,c.y);},
@@ -93,11 +97,13 @@
         selectedTarget:{name:this.vm?.editingTarget?.getName(),isStage:!!this.vm?.editingTarget?.isStage},
         selectedTab:['code','costumes','sounds'][gui?.editorTab?.activeTabIndex]??null,
         workspace:w?{scale:w.scale,scrollX:w.scrollX,scrollY:w.scrollY,dragging:w.isDragging(),subtitleMargin:this.subtitleMargin}:null,
+        paint:gui?.editorTab?.activeTabIndex===1&&this.paintCanvas&&!this.paintCanvas.queuedImport&&!this.paintCanvas.queuedImageToLoad&&this.paintTool&&this.store.getState().scratchPaint.format.startsWith('VECTOR')?this.paintInfo():null,
         running:!!gui?.vmStatus?.running,
         modal:modalType||dialog?{type:modalType||'dialog',label:dialog?.getAttribute('aria-label')||null}:null,
         fieldEditorOpen:fieldEditor,
         stageMode:gui?.mode?.isFullScreen?'fullscreen':'editor',
-        targets: this.vm?.runtime.targets.filter(t => t.isOriginal).map(t => ({id:t.id,name:t.getName(),isStage:t.isStage,x:t.x,y:t.y,visible:t.visible,draggable:t.draggable,variables:Object.values(t.variables).filter(v=>v.type==='').map(v=>({id:v.id,name:v.name,value:v.value}))})),
+        monitors:this.vm?[...this.vm.runtime._monitorState.keys()].map(id=>this.monitorInfo(id)):[],
+        targets: this.vm?.runtime.targets.filter(t => t.isOriginal).map(t => ({id:t.id,name:t.getName(),isStage:t.isStage,x:t.x,y:t.y,visible:t.visible,draggable:t.draggable,variables:Object.values(t.variables).filter(v=>v.type==='').map(v=>({id:v.id,name:v.name,value:v.value})),lists:Object.values(t.variables).filter(v=>v.type==='list').map(v=>({id:v.id,name:v.name,length:v.value.length,values:v.value.slice()})),cloneCount:this.vm.runtime.targets.filter(v=>!v.isOriginal&&v.sprite===t.sprite).length})),
         blocks: w?.getAllBlocks(false).map(b => ({id:b.id,type:b.type,text:b.toString(),x:b.getRelativeToSurfaceXY().x,y:b.getRelativeToSurfaceXY().y,
           parent:b.getParent()?.id??null,next:b.getNextBlock()?.id??null,shadow:b.isShadow(),
           inputs:b.inputList.map(i=>({name:i.name,blockId:i.connection?.targetBlock()?.id??null})),
@@ -106,6 +112,9 @@
     }
   };
   installStudioGeometry(studio);
+  installStudioPaint(studio);
+  installStudioRuntimeData(studio);
+  installStudioMonitors(studio);
   const init = setInterval(() => {
     if (!studio.store) return;
     studio.store.dispatch({type:'scratch-gui/locales/SELECT_LOCALE',locale:'ja'});

@@ -1,0 +1,57 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import express from 'express';
+import JSZip from 'jszip';
+import {EditorController} from '../server/controller.mjs';
+import {apiRouter} from '../server/api.mjs';
+import {boardDemo} from './fixtures/board-demo.mjs';
+import {readSb3} from '../server/project.mjs';
+import {monitorSpecification} from '../server/monitor-actions.mjs';
+const root=path.resolve('test-results/monitors',randomUUID());await fs.mkdir(root,{recursive:true});
+const app=express(),server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));}),base='http://127.0.0.1:'+server.address().port;
+app.use(express.json({limit:'80mb'}));app.use('/api',await apiRouter(root,base));app.use('/outputs',express.static(path.join(root,'outputs')));app.use('/scratch',express.static(path.resolve('vendor/package/dist')));app.use('/deps',express.static(path.resolve('node_modules')));app.use(express.static(path.resolve('web')));app.use(express.static(path.resolve('vendor/package/dist')));app.use((e,req,res,next)=>res.status(400).json({error:e.message}));
+const request=async(url,body)=>{const r=await fetch(base+'/api'+url,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),data=await r.json();if(!r.ok)throw new Error(data.error);return data;};
+const done=async id=>{const start=Date.now();while(Date.now()-start<90000){const j=await request('/jobs/'+id);if(!['running','encoding'].includes(j.status))return j;await new Promise(r=>setTimeout(r,150));}throw new Error('cut timeout');};
+let c;
+try{
+ assert.throws(()=>monitorSpecification({type:'monitor.scroll',name:'a',index:1}),/リスト/);
+ assert.throws(()=>monitorSpecification({type:'monitor.layout',name:'a',width:100}),/リスト/);
+ const zip=await JSZip.loadAsync(await boardDemo()),p=JSON.parse(await zip.file('project.json').async('string'));
+ p.targets[0].lists.board[1]=Array.from({length:128},(_,i)=>'項目'+(i+1));zip.file('project.json',JSON.stringify(p));const buffer=await zip.generateAsync({type:'nodebuffer'});await fs.writeFile(path.join(root,'モニター確認.sb3'),buffer);
+ c=await new EditorController(base,{timing:{move:70,drag:160,type:1,pause:30}}).open();await c.load(buffer);await c.selectTarget('マス');
+ const global={kind:'list',scope:'global',name:'マスの状態'},local={kind:'list',scope:'local',target:'マス',name:'マスの状態'},phase={scope:'global',name:'進行状況'};
+ await c.execute({type:'monitor.show',...global});let m=await c.execute({type:'monitor.layout',...global,x:12,y:46,width:180,height:190});assert.equal(m.x,12);assert.equal(m.width,180);assert.equal(m.height,190);assert.equal(m.label,'マスの状態');
+ m=await c.execute({type:'monitor.scroll',...global,index:64,duration:200});assert.ok(m.scroll.first<=64&&m.scroll.last>=64);
+ await c.execute({type:'monitor.show',...local});m=await c.execute({type:'monitor.layout',...local,x:240,y:46,width:180,height:150});assert.match(m.label,/マス.*マスの状態/);assert.equal(m.value[0],'local');
+ await c.execute({type:'monitor.hide',...local});assert.equal((await c.state()).monitors.find(v=>v.id==='private').visible,false);
+ m=await c.execute({type:'monitor.layout',...phase,x:12,y:10,mode:'large'});assert.equal(m.mode,'large');
+ m=await c.execute({type:'monitor.layout',...phase,mode:'slider'});assert.equal(m.mode,'slider');
+ m=await c.execute({type:'monitor.layout',...phase,mode:'default'});assert.equal(m.label,'進行状況');
+ await c.execute({type:'stage.view',mode:'fullscreen'});m=await c.execute({type:'monitor.scroll',...global,index:128,duration:200});assert.equal(m.scroll.last,128);
+ m=await c.execute({type:'monitor.scroll',...global,index:1,duration:0,align:'start'});assert.equal(m.scroll.first,1);
+ await c.execute({type:'monitor.layout',...global,x:20,y:50,width:200,height:200});assert.equal((await c.state()).stageMode,'fullscreen');
+ await c.execute({type:'monitor.hide',...global});await assert.rejects(c.execute({type:'monitor.scroll',...global,index:1}),/表示されて/);
+ await c.execute({type:'monitor.show',...global});assert.equal((await c.state()).stageMode,'fullscreen');
+ await c.execute({type:'stage.view',mode:'editor'});await c.selectTarget('Stage',true);
+ await c.execute({type:'monitor.hide',...local});await c.execute({type:'monitor.show',...local});assert.equal((await c.state()).target,'マス');await c.execute({type:'monitor.hide',...local});
+ await assert.rejects(c.execute({type:'monitor.layout',...global,x:450}),/収まる/);await assert.rejects(c.execute({type:'monitor.scroll',...global,index:129}),/範囲外/);
+ await c.page.evaluate(()=>{const el=document.createElement('div'),m=studio.monitorInfo('board').box;el.id='obstruction';Object.assign(el.style,{position:'fixed',left:m.x+'px',top:m.y+'px',width:m.width+'px',height:m.height+'px',zIndex:999999});document.body.append(el);});
+ await assert.rejects(c.execute({type:'monitor.scroll',...global,index:1}),/隠れて/);await c.page.evaluate(()=>document.getElementById('obstruction').remove());
+ const saved=await c.save(),project=await readSb3(saved),monitor=project.project.monitors.find(m=>m.id==='board');assert.equal(monitor.x,20);assert.equal(monitor.width,200);assert.equal(monitor.params.LIST,'マスの状態');
+ await c.load(saved);await c.page.waitForFunction(()=>studio.monitorInfo('board')?.label==='マスの状態');assert.equal((await c.state()).monitors.find(m=>m.id==='board').width,200);assert.deepEqual(c.errors,[]);
+ assert.equal(await c.page.locator('#movie-cursor').evaluate(e=>e.style.visibility),'hidden');await c.close();c=null;
+ const upload=await fetch(base+'/api/projects',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:buffer}),source=await upload.json();
+ const actions=[{type:'monitor.show',...global},{type:'monitor.layout',...global,x:12,y:46,width:180,height:190},{type:'monitor.scroll',...global,index:64},{type:'monitor.hide',...global},{type:'monitor.show',...global}];
+ const job=await done((await request('/cuts',{projectId:source.id,title:'リストモニターの表示・配置・スクロール',speed:4,actions,afterMs:300})).id);assert.equal(job.status,'completed',job.error);
+ const {chromium}=await import('playwright'),browser=await chromium.launch({channel:'chrome',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:1440,height:1080}});await page.goto(base+'/cuts.html');await page.locator('#source').setInputFiles(path.join(root,'モニター確認.sb3'));await page.waitForFunction(()=>!document.getElementById('monitorSample').disabled);
+  await page.getByText('変数・リストのモニター操作',{exact:true}).click();await page.locator('#monitorIndex').fill('64');await page.locator('#monitorSample').click();const recipe=JSON.parse(await page.locator('#recipe').inputValue());assert.equal(recipe.actions[0].id,'board');assert.equal(recipe.actions[2].index,64);
+  await page.locator('#monitorStart').check();await page.locator('#monitorSample').click();const initialized=JSON.parse(await page.locator('#recipe').inputValue());assert.equal(initialized.setup[0].type,'project.start');assert.equal(initialized.setup[1].conditions[0].value,64);await page.locator('#monitorStart').uncheck();
+  recipe.speed=10;await page.locator('#recipe').fill(JSON.stringify(recipe));await page.locator('#before').fill('0');await page.locator('#after').fill('0.1');await page.locator('#render').click();
+  await page.waitForFunction(()=>!document.getElementById('movie').hidden||!document.getElementById('error').hidden,null,{timeout:60000});assert.equal(await page.locator('#error').isVisible(),false,await page.locator('#error').textContent());await page.screenshot({path:path.join(root,'monitor-ui.png'),fullPage:true});
+ }finally{await browser.close();}
+ console.log('PASS native monitor visibility, scoped names, modes, drag/resize, list wheel editor/fullscreen, range/obstruction, sb3 save/reload and MP4: '+root);
+}finally{await c?.close();await new Promise(resolve=>server.close(resolve));}

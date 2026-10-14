@@ -11,8 +11,9 @@ import {JobRunner,publicJob,activeJob} from './jobs.mjs';
 import {normalizeScenes} from './scenes.mjs';
 import {CutRunner,normalizeCut} from './cuts.mjs';
 import {DEMO_OPERATIONS} from './demo-actions.mjs';
+import {PAINT_OPERATIONS} from './paint-actions.mjs';
 
-export const OPERATIONS=[...DEMO_OPERATIONS,'tab.select','costume.add','costume.select','sound.add','target.select','category.select','variable.create','procedure.create','broadcast.create','block.add','block.input','block.field','block.move','block.delete','workspace.zoom','view.configure','workspace.focus','mouse.move','mouse.click','mouse.down','mouse.up','mouse.wheel','keyboard.type','keyboard.press','project.start','project.stop','wait'];
+export const OPERATIONS=[...DEMO_OPERATIONS,...PAINT_OPERATIONS,'tab.select','costume.add','costume.select','sound.add','target.select','category.select','variable.create','procedure.create','broadcast.create','block.add','block.input','block.field','block.move','block.delete','workspace.zoom','view.configure','workspace.focus','mouse.move','mouse.click','mouse.down','mouse.up','mouse.wheel','keyboard.type','keyboard.press','project.start','project.stop','wait'];
 export async function apiRouter(root,baseURL) {
   const router=express.Router(),projects=new Map(),sessions=new Map(),jobs=new Map();
   const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res)).catch(next);
@@ -35,7 +36,7 @@ export async function apiRouter(root,baseURL) {
     const directory=cuts.directory(job.id),recipe=JSON.parse(await fs.readFile(path.join(directory,'cut.json'),'utf8'));
     res.status(202).json(await startCut(await fs.readFile(path.join(directory,'source.sb3')),{...recipe,...req.body},job.id));
   }));
-  router.get('/capabilities',(req,res)=>res.json({version:'0.3.0',editorVersion:'15.1.1',operations:OPERATIONS,extensions:['pen'],video:{width:1920,height:1080,fps:30,format:'mp4'},unsupported:['paint drawing automation','sound waveform editing','cloud sync','hardware extensions'],note:'背景・コスチューム・音は公式のアップロード操作で追加します。スプライト自体は撮影前に準備します。'}));
+  router.get('/capabilities',(req,res)=>res.json({version:'0.3.0',editorVersion:'15.1.1',operations:OPERATIONS,extensions:['pen'],video:{width:1920,height:1080,fps:30,format:'mp4'},unsupported:['bitmap/freehand paint automation','sound waveform editing','cloud sync','hardware extensions'],note:'背景・コスチューム・音は公式のアップロード操作で追加します。スプライト自体は撮影前に準備します。'}));
   router.get('/samples',asyncRoute(async(req,res)=>res.json((await fs.readdir(root)).filter(n=>n.endsWith('.sb3')))));
   async function addProject(buffer,name) {
     const {project:json}=await readSb3(buffer);const plan=buildPlan(json,{assets:true}),id=randomUUID();
@@ -118,6 +119,7 @@ export async function apiRouter(root,baseURL) {
     if(!['full','scenes','both'].includes(outputMode))throw new Error('出力形式は full / scenes / both です。');
     const scenes=outputMode==='full'?[]:normalizeScenes(plan,req.body.scenes);
     if(plan.actions.some(a=>DEMO_OPERATIONS.includes(a.type)))throw new Error('実演用操作は独立カットまたは個別セッションで使用してください。');
+    if(plan.actions.some(a=>PAINT_OPERATIONS.includes(a.type)))throw new Error('作画操作は独立カットまたは個別セッションで使用してください。');
     if(outputMode!=='full'&&plan.actions.some(a=>/^(mouse\.|keyboard\.|project\.)/.test(a.type)))throw new Error('場面別出力には、直接のマウス・キー・実行操作を含まない手順を指定してください。');
     if(outputMode==='scenes'&&!scenes.some(s=>s.enabled)&&demoSeconds===0)throw new Error('出力する場面を1つ以上選択してください。');
     jobs.set(id,job);

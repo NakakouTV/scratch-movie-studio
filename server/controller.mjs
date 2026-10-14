@@ -1,5 +1,7 @@
 import {chromium} from 'playwright';
 import {DEMO_OPERATIONS,runDemoAction} from './demo-actions.mjs';
+import {PAINT_OPERATIONS,runPaintAction} from './paint-actions.mjs';
+import {boardConfiguration} from './board-actions.mjs';
 import {readSb3,EMPTY_COSTUME} from './project.mjs';
 
 const categories={event:'events',control:'control',motion:'motion',looks:'looks',sound:'sound',sensing:'sensing',operator:'operators',data:'variables',procedures:'myBlocks',pen:'pen'};
@@ -150,7 +152,7 @@ export class EditorController {
         input.sourceName=index<0?input.name:args.originalArgs[index];
       }
     }
-    return state;
+    state.board=this.board?{...this.board}:boardConfiguration();return state;
   }
   async setAssetSource(buffer) {this.assetSource=await readSb3(buffer);}
   async selectTab(tab) {
@@ -531,6 +533,7 @@ export class EditorController {
     finally{await this.hideCursor();}
   }
   async performAction(a) {
+    if(PAINT_OPERATIONS.includes(a.type))return runPaintAction(this,a);
     if(DEMO_OPERATIONS.includes(a.type))return runDemoAction(this,a);
     switch(a.type) {
       case 'tab.select':return this.selectTab(a.tab);

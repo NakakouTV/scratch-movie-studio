@@ -19,7 +19,9 @@ export function normalizeCut(input,operations){
   };
   const title=input.title??'カット';if(typeof title!=='string'||!title.trim()||title.length>200)throw new Error('カット名は1〜200文字です。');
   const start=input.start??'project';if(!['project','blank'].includes(start))throw new Error('開始状態はproject / blankです。');
-  return {version:1,title:title.trim(),start,subtitleMargin:subtitleMargin(input.subtitleMargin),setup:actions(input.setup,'準備'),actions:actions(input.actions,'撮影'),framing:framing(input.framing??undefined),endFraming:framing(input.endFraming??undefined),speed:number(input.speed,1,0.25,10,'速度'),beforeMs:number(input.beforeMs,500,0,30000,'前の余白'),afterMs:number(input.afterMs,1000,0,30000,'後の余白')};
+  if(input.clearAssets!==undefined&&typeof input.clearAssets!=='boolean')throw new Error('clearAssetsはtrue / falseです。');
+  if(input.clearAssets&&start!=='blank')throw new Error('素材を空にする場合はstart: blankを指定してください。');
+  return {version:1,title:title.trim(),start,clearAssets:input.clearAssets??false,subtitleMargin:subtitleMargin(input.subtitleMargin),setup:actions(input.setup,'準備'),actions:actions(input.actions,'撮影'),framing:framing(input.framing??undefined),endFraming:framing(input.endFraming??undefined),speed:number(input.speed,1,0.25,10,'速度'),beforeMs:number(input.beforeMs,500,0,30000,'前の余白'),afterMs:number(input.afterMs,1000,0,30000,'後の余白')};
 }
 
 export class CutRunner extends JobRunner {
@@ -53,8 +55,8 @@ export class CutRunner extends JobRunner {
     try{
       const recipe=JSON.parse(await fs.readFile(path.join(directory,'cut.json'),'utf8')),source=await fs.readFile(path.join(directory,'source.sb3'));
       artifact('cut.json');artifact('source.sb3');
-      const s=recipe.speed;c=job.controller=await new EditorController(this.baseURL,{subtitleMargin:recipe.subtitleMargin,timing:{move:450/s,drag:750/s,type:75/s,pause:200/s}}).open();
-      await c.setAssetSource(source);await c.load(source);if(recipe.start==='blank')await c.load(await blankProject(source));
+      const s=recipe.speed;c=job.controller=await new EditorController(this.baseURL,{shouldCancel:()=>job.cancelled,subtitleMargin:recipe.subtitleMargin,timing:{move:450/s,drag:750/s,type:75/s,pause:200/s}}).open();
+      await c.setAssetSource(source);await c.load(source);if(recipe.start==='blank')await c.load(await blankProject(source,{assets:recipe.clearAssets}));
       await perform(recipe.setup,'setup');await frame(recipe.framing);check();
       // Saving the start project is diagnostic; retakes replay preparation from
       // the original source so runtime state and aliases are never assumed saved.

@@ -1,6 +1,10 @@
+import {BOARD_OPERATIONS,runBoardAction} from './board-actions.mjs';
+import {MONITOR_OPERATIONS,runMonitorAction} from './monitor-actions.mjs';
 // Runtime demonstrations use named targets/variables and native pointer actions.
-export const DEMO_OPERATIONS=['variable.set','script.run','sprite.drag','stage.view'];
+export const DEMO_OPERATIONS=[...BOARD_OPERATIONS,...MONITOR_OPERATIONS,'variable.set','script.run','sprite.drag','stage.view'];
 export async function runDemoAction(c,a){
+  if(BOARD_OPERATIONS.includes(a.type))return runBoardAction(c,a);
+  if(MONITOR_OPERATIONS.includes(a.type))return runMonitorAction(c,a);
   if(a.type==='variable.set'){
     if(!['string','number'].includes(typeof a.value)||(typeof a.value==='number'&&!Number.isFinite(a.value)))throw new Error('変数の値は文字列または有限の数値です。');
     const duration=a.duration??0;if(!Number.isFinite(duration)||duration<0||duration>60000)throw new Error('変数変更の時間は0〜60000msです。');
