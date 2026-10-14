@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {JobRunner,atomicJSON} from './jobs.mjs';
-import {EditorController,subtitleMargin} from './controller.mjs';
+import {EditorController,subtitleMargin,editorZoom} from './controller.mjs';
 import {blankProject} from './project.mjs';
 import {Recorder} from './recorder.mjs';
 
@@ -21,7 +21,7 @@ export function normalizeCut(input,operations){
   const start=input.start??'project';if(!['project','blank'].includes(start))throw new Error('開始状態はproject / blankです。');
   if(input.clearAssets!==undefined&&typeof input.clearAssets!=='boolean')throw new Error('clearAssetsはtrue / falseです。');
   if(input.clearAssets&&start!=='blank')throw new Error('素材を空にする場合はstart: blankを指定してください。');
-  return {version:1,title:title.trim(),start,clearAssets:input.clearAssets??false,subtitleMargin:subtitleMargin(input.subtitleMargin),setup:actions(input.setup,'準備'),actions:actions(input.actions,'撮影'),framing:framing(input.framing??undefined),endFraming:framing(input.endFraming??undefined),speed:number(input.speed,1,0.25,10,'速度'),beforeMs:number(input.beforeMs,500,0,30000,'前の余白'),afterMs:number(input.afterMs,1000,0,30000,'後の余白')};
+  return {version:1,title:title.trim(),start,clearAssets:input.clearAssets??false,subtitleMargin:subtitleMargin(input.subtitleMargin),editorZoom:editorZoom(input.editorZoom),setup:actions(input.setup,'準備'),actions:actions(input.actions,'撮影'),framing:framing(input.framing??undefined),endFraming:framing(input.endFraming??undefined),speed:number(input.speed,1,0.25,10,'速度'),beforeMs:number(input.beforeMs,500,0,30000,'前の余白'),afterMs:number(input.afterMs,1000,0,30000,'後の余白')};
 }
 
 export class CutRunner extends JobRunner {
@@ -55,7 +55,7 @@ export class CutRunner extends JobRunner {
     try{
       const recipe=JSON.parse(await fs.readFile(path.join(directory,'cut.json'),'utf8')),source=await fs.readFile(path.join(directory,'source.sb3'));
       artifact('cut.json');artifact('source.sb3');
-      const s=recipe.speed;c=job.controller=await new EditorController(this.baseURL,{shouldCancel:()=>job.cancelled,subtitleMargin:recipe.subtitleMargin,timing:{move:450/s,drag:750/s,type:75/s,pause:200/s}}).open();
+      const s=recipe.speed;c=job.controller=await new EditorController(this.baseURL,{shouldCancel:()=>job.cancelled,subtitleMargin:recipe.subtitleMargin,editorZoom:recipe.editorZoom,timing:{move:450/s,drag:750/s,type:75/s,pause:200/s}}).open();
       await c.setAssetSource(source);await c.load(source);if(recipe.start==='blank')await c.load(await blankProject(source,{assets:recipe.clearAssets}));
       await perform(recipe.setup,'setup');await frame(recipe.framing);check();
       // Saving the start project is diagnostic; retakes replay preparation from
@@ -63,7 +63,7 @@ export class CutRunner extends JobRunner {
       await fs.writeFile(path.join(directory,'start.sb3'),await c.save());artifact('start.sb3');
       await c.hideCursor();await c.page.screenshot({path:path.join(directory,'start.jpg')});artifact('start.jpg');
       recorder=new Recorder(c.page,directory);await recorder.start();await hold(recipe.beforeMs);
-      await perform(recipe.actions,'capture');await frame(recipe.endFraming);await c.hideCursor();await hold(recipe.afterMs);check();
+      await perform(recipe.actions,'capture');await frame(recipe.endFraming);await c.settleCursor(true);await hold(recipe.afterMs);check();
       await recorder.stop();job.status='encoding';job.current='カットを保存中';await recorder.encode();check();
       await fs.writeFile(path.join(directory,'result.sb3'),await c.save());artifact('result.sb3');
       job.preview=path.join(directory,'preview.jpg');await c.page.screenshot({path:job.preview});artifact('preview.jpg');artifact('movie.mp4');artifact('recording.json');

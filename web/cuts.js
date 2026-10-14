@@ -29,7 +29,7 @@ $('range').onclick=()=>{try{
   if(!Number.isInteger(from)||!Number.isInteger(to)||from<1||to<from||to>project.plan.actions.length)throw new Error('制作手順内の開始・終了番号を指定してください。');
   $('recipe').value=JSON.stringify({start:'blank',setup:project.plan.actions.slice(0,from-1),actions:project.plan.actions.slice(from-1,to)},null,2);
 }catch(e){error(e);}};
-$('render').onclick=async()=>{try{clear();const recipe=JSON.parse($('recipe').value);await watch((await api('/cuts',json({...recipe,projectId:project.id,title:$('title').value,subtitleMargin:Number($('subtitleMargin').value),beforeMs:Number($('before').value)*1000,afterMs:Number($('after').value)*1000}))).id);}catch(e){error(e);}};
+$('render').onclick=async()=>{try{clear();const recipe=JSON.parse($('recipe').value);await watch((await api('/cuts',json({...recipe,projectId:project.id,title:$('title').value,editorZoom:Number($('editorZoom').value),subtitleMargin:Number($('subtitleMargin').value),beforeMs:Number($('before').value)*1000,afterMs:Number($('after').value)*1000}))).id);}catch(e){error(e);}};
 $('paintSample').onclick=()=>{
   clear();$('title').value='空マス・白マス・黒マスの作画';
   $('recipe').value=JSON.stringify({start:'blank',clearAssets:true,setup:[{type:'target.select',target:$('paintTarget').value,isStage:$('paintTarget').selectedOptions[0].dataset.isStage==='true'}],actions:[

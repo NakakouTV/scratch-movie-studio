@@ -15,7 +15,7 @@ const base='http://127.0.0.1:'+server.address().port;app.use(express.json({limit
 assert.throws(()=>normalizeCut({clearAssets:true},OPERATIONS));assert.equal(normalizeCut({start:'blank',clearAssets:true},OPERATIONS).clearAssets,true);
 try{
  if(!process.argv.includes('--ui-only')){
- c=await new EditorController('http://127.0.0.1:'+server.address().port,{timing:{move:40,drag:220,type:8,pause:40}}).open();
+ c=await new EditorController('http://127.0.0.1:'+server.address().port,{editorZoom:1.5,timing:{move:40,drag:220,type:8,pause:40}}).open();
  await c.load(await blankProject(await fs.readFile('PEN動作確認.sb3'),{assets:true}));await c.selectTarget('ペン');
  recorder=new Recorder(c.page,output);await recorder.start();
  const act=async a=>{console.log(a.type);const r=await c.execute(a);assert.equal(await c.page.locator('#movie-cursor').evaluate(el=>getComputedStyle(el).visibility),'hidden');return r;};
@@ -49,8 +49,10 @@ try{
   const page=await browser.newPage({viewport:{width:1440,height:1080}});await page.goto(base+'/cuts.html');await page.locator('#source').setInputFiles('PEN動作確認.sb3');await page.waitForFunction(()=>!document.getElementById('paintSample').disabled);
   assert.equal(await page.locator('#paintTarget').inputValue(),'ペン');await page.getByText('コスチューム作画のサンプル',{exact:true}).click();await page.locator('#paintSample').click();
   const recipe=JSON.parse(await page.locator('#recipe').inputValue());assert.equal(recipe.clearAssets,true);recipe.speed=10;await page.locator('#recipe').fill(JSON.stringify(recipe));await page.locator('#before').fill('0');await page.locator('#after').fill('0.1');
+  await page.locator('#editorZoom').selectOption('1.5');
   await page.locator('#render').click();await page.waitForFunction(()=>!document.getElementById('movie').hidden||!document.getElementById('error').hidden,null,{timeout:120000});assert.equal(await page.locator('#error').isVisible(),false,await page.locator('#error').textContent());
   const jobs=await (await page.request.get(base+'/api/jobs')).json(),job=jobs.find(j=>j.status==='completed');assert.ok(job);
+  assert.equal(JSON.parse(await fs.readFile(path.join(output,'outputs',job.id,'cut.json'),'utf8')).editorZoom,1.5);
   const saved=await readSb3(await fs.readFile(path.join(output,'outputs',job.id,'result.sb3')));assert.deepEqual(saved.project.targets.find(t=>t.name==='ペン').costumes.map(v=>v.name),['空マス','白マス','黒マス']);
   await page.screenshot({path:path.join(output,'cut-ui.png'),fullPage:true});
  }finally{await browser.close();}

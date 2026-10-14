@@ -16,12 +16,13 @@ export async function boardDemo(){
  const variable=(name,id)=>b('data_variable',{}, {VARIABLE:[name,id]});
  const set=(name,id,value)=>b('data_setvariableto',{VALUE:value},{VARIABLE:[name,id]});
  const change=(name,id,value)=>b('data_changevariableby',{VALUE:value},{VARIABLE:[name,id]});
+ const menu=(opcode,fields)=>{const id=b(opcode,{},fields);blocks[id].shadow=true;return id;};
  const root=(ids,x,y)=>{const id=chain(ids);blocks[id].topLevel=true;blocks[id].x=x;blocks[id].y=y;};
  const list={LIST:['マスの状態','board']},at=()=>b('data_itemoflist',{INDEX:variable('クローンID','index')},list);
  const coordinate=(name,id)=>b('operator_add',{NUM1:-48,NUM2:b('operator_multiply',{NUM1:b('operator_subtract',{NUM1:variable(name,id),NUM2:.5}),NUM2:24})});
  const cell=chain([
   change('クローンID','index',1),b('motion_setx',{X:coordinate('横','column')}),b('motion_sety',{Y:coordinate('縦','row')}),
-  b('control_create_clone_of',{CLONE_OPTION:b('control_create_clone_of_menu',{}, {CLONE_OPTION:['_myself_',null]})}),change('横','column',1)
+  b('control_create_clone_of',{CLONE_OPTION:menu('control_create_clone_of_menu',{CLONE_OPTION:['_myself_',null]})}),change('横','column',1)
  ]);
  const row=chain([set('横','column',1),b('control_repeat',{TIMES:4,SUBSTACK:cell}),change('縦','row',1)]);
  root([b('event_whenflagclicked'),b('looks_hide'),b('data_deletealloflist',{},list),b('control_repeat',{TIMES:16,SUBSTACK:b('data_addtolist',{ITEM:'空マス'},list)}),set('クローンID','index',0),set('縦','row',1),b('control_repeat',{TIMES:4,SUBSTACK:row}),set('クローンID','index',0),set('進行状況','phase','準備完了')],100,100);

@@ -76,7 +76,11 @@
         return !b.isShadow();
       });
     },
-    cursor(x,y) { const el=document.getElementById('movie-cursor');el.style.transform=`translate(${x}px,${y}px)`;el.style.visibility='visible'; },
+    cursor(x,y) { this.cursorPosition={x,y};const el=document.getElementById('movie-cursor');el.style.transform=`translate(${x}px,${y}px)`;el.style.visibility='visible'; },
+    cursorOnStage() {
+      const p=this.cursorPosition,el=document.getElementById('movie-cursor'),canvas=this.vm?.renderer?.canvas;
+      return !!p&&el.style.visibility==='visible'&&!!canvas&&document.elementFromPoint(p.x,p.y)===canvas;
+    },
     hideCursor() { document.getElementById('movie-cursor').style.visibility='hidden'; },
     async load(base64) {
       await this.vm.loadProject(Uint8Array.from(atob(base64), c => c.charCodeAt(0)));
@@ -96,7 +100,8 @@
       return {ready: !!w, target: this.vm?.editingTarget?.getName(),
         selectedTarget:{name:this.vm?.editingTarget?.getName(),isStage:!!this.vm?.editingTarget?.isStage},
         selectedTab:['code','costumes','sounds'][gui?.editorTab?.activeTabIndex]??null,
-        workspace:w?{scale:w.scale,scrollX:w.scrollX,scrollY:w.scrollY,dragging:w.isDragging(),subtitleMargin:this.subtitleMargin}:null,
+        workspace:w?{scale:w.scale,scrollX:w.scrollX,scrollY:w.scrollY,dragging:w.isDragging(),subtitleMargin:this.subtitleMargin*(this.editorZoom??1)}:null,
+        editorZoom:this.editorZoom??1,
         paint:gui?.editorTab?.activeTabIndex===1&&this.paintCanvas&&!this.paintCanvas.queuedImport&&!this.paintCanvas.queuedImageToLoad&&this.paintTool&&this.store.getState().scratchPaint.format.startsWith('VECTOR')?this.paintInfo():null,
         running:!!gui?.vmStatus?.running,
         modal:modalType||dialog?{type:modalType||'dialog',label:dialog?.getAttribute('aria-label')||null}:null,

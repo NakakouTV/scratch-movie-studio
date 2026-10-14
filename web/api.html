@@ -74,7 +74,7 @@ POST /sessions/{id}/actions
 <tr><td>block.input</td><td>block、input、value</td></tr>
 <tr><td>block.field</td><td>block、field、value、必要に応じて input</td></tr>
 <tr><td>block.delete</td><td>block</td></tr>
-<tr><td>view.configure</td><td>minScale: 0.3〜1.5（初期値0.8）、subtitleMargin: 0〜400pxの整数（初期値220、0で無効）</td></tr>
+<tr><td>view.configure</td><td>minScale: 0.3〜1.5（初期値0.8）、editorZoom: 1〜1.75（初期値1。メニュー・タブ・ステージ全体の拡大）、subtitleMargin: 0〜400pxの整数（初期値220、0で無効）</td></tr>
 <tr><td>workspace.focus / workspace.zoom</td><td>block / scale</td></tr>
 <tr><td>mouse.move / mouse.click</td><td>x、y（画面座標）、duration / button</td></tr>
 <tr><td>mouse.down / mouse.up / mouse.wheel</td><td>ホイール時 dx、dy</td></tr>
@@ -95,6 +95,7 @@ const actions = [target.selectAction,
 <table><tbody>
 <tr><td>selectedTarget / selectedTab</td><td>対象名・isStage、code / costumes / sounds</td></tr>
 <tr><td>workspace</td><td>scale、scrollX、scrollY、subtitleMargin、dragging</td></tr>
+<tr><td>editorZoom</td><td>エディタ全体の倍率。ジョブ・カット・セッション作成時にも指定可能。出力は1920×1080を維持。boxはCSS座標なのでmouse.*に使う場合はeditorZoomを掛けます。</td></tr>
 <tr><td>targets / board</td><td>オリジナル対象のvariables・lists（id/name/length/values）・cloneCountと、盤面の行列・位置・マスサイズの設定。</td></tr>
 <tr><td>paint</td><td>ベクター作画タブでは図形番号、選択状態、寸法、枠線を含む寸法、倍率とスタイル。その他のタブやビットマップではnull。</td></tr>
 <tr><td>monitors</td><td>変数・リストの表示状態・所有者・値・位置・サイズ・表示形式。表示中ならlabelとbox、リストならscroll（top / height / total / first / last / box）。</td></tr>

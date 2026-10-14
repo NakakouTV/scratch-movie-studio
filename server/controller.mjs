@@ -1,12 +1,20 @@
 import {chromium} from 'playwright';
+import fs from 'node:fs/promises';
 import {DEMO_OPERATIONS,runDemoAction} from './demo-actions.mjs';
 import {PAINT_OPERATIONS,runPaintAction} from './paint-actions.mjs';
 import {boardConfiguration} from './board-actions.mjs';
 import {readSb3,EMPTY_COSTUME} from './project.mjs';
 
 const categories={event:'events',control:'control',motion:'motion',looks:'looks',sound:'sound',sensing:'sensing',operator:'operators',data:'variables',procedures:'myBlocks',pen:'pen'};
+// Game pointer actions and waits retain the visible cursor over the stage.
+// Editing actions and failures still hide it so it cannot cover new content.
+const stageCursorActions=new Set(['board.click','sprite.drag','wait','runtime.wait','variable.set','list.set','list.replace','list.get','board.configure']);
 export function subtitleMargin(value=220){
   if(!Number.isInteger(value)||value<0||value>400)throw new Error('字幕用の余白は0〜400pxの整数です。');
+  return value;
+}
+export function editorZoom(value=1){
+  if(!Number.isFinite(value)||value<1||value>1.75)throw new Error('エディタ全体の倍率は1〜1.75です。');
   return value;
 }
 export class EditorController {
@@ -14,12 +22,26 @@ export class EditorController {
     this.baseURL=baseURL;this.options=options;
     this.timing={move:450,drag:750,type:75,pause:200,...options.timing};
     this.aliases=new Map();this.procedures=new Map();this.variableRefs=new Map();this.broadcastNames=new Map();this.position={x:600,y:500};
-    this.minScale=options.minScale??0.8;this.subtitleMargin=subtitleMargin(options.subtitleMargin);this.activeTab='code';
+    this.minScale=options.minScale??0.8;this.subtitleMargin=subtitleMargin(options.subtitleMargin);this.editorZoom=editorZoom(options.editorZoom);this.activeTab='code';
   }
   async open() {
     this.browser=await chromium.launch({channel:process.env.BROWSER_CHANNEL||'chrome',headless:!this.options.headed,args:['--no-proxy-server','--autoplay-policy=no-user-gesture-required']});
     this.context=await this.browser.newContext({viewport:{width:1920,height:1080},deviceScaleFactor:1,locale:'ja-JP',acceptDownloads:true});
     this.page=await this.context.newPage();
+    this.viewCDP=await this.context.newCDPSession(this.page);
+    const screenshot=this.page.screenshot.bind(this.page);
+    // Playwright restores its original context metrics after screenshotting.
+    // Capture zoomed pages through CDP so recording/preview cannot reset zoom.
+    this.page.screenshot=async(options={})=>{
+      if(this.editorZoom===1)return screenshot(options);
+      const format=options.type??(/\.jpe?g$/i.test(options.path??'')?'jpeg':'png');
+      const params={format,fromSurface:true,captureBeyondViewport:false};
+      if(format==='jpeg'&&options.quality!==undefined)params.quality=options.quality;
+      if(options.clip)params.clip={...options.clip,scale:options.scale==='css'?1/this.editorZoom:1};
+      const {data}=await this.viewCDP.send('Page.captureScreenshot',params),buffer=Buffer.from(data,'base64');
+      if(options.path)await fs.writeFile(options.path,buffer);
+      return buffer;
+    };
     this.page.setDefaultTimeout(10000);
     this.errors=[];
     this.page.on('pageerror',e=>this.errors.push(e.message));
@@ -89,10 +111,15 @@ export class EditorController {
     for(const b of loaded)this.aliases.set(`${b.target}\0${b.sourceId}`,b.id);
     await this.configureView({minScale:this.minScale});
   }
-  async configureView({minScale=this.minScale,subtitleMargin:margin=this.subtitleMargin}={}) {
+  async configureView({minScale=this.minScale,subtitleMargin:margin=this.subtitleMargin,editorZoom:zoom=this.editorZoom}={}) {
     if(!Number.isFinite(minScale)||minScale<0.3||minScale>1.5)throw new Error('倍率下限は0.3〜1.5です。');
-    margin=subtitleMargin(margin);this.minScale=minScale;this.subtitleMargin=margin;
-    await this.page.evaluate(({scale,margin})=>{studio.minScale=scale;studio.subtitleMargin=margin;studio.ensureReadable();},{scale:minScale,margin});
+    margin=subtitleMargin(margin);zoom=editorZoom(zoom);this.minScale=minScale;this.subtitleMargin=margin;
+    if(this.appliedEditorZoom!==zoom){
+      await this.viewCDP.send('Emulation.setDeviceMetricsOverride',{width:Math.round(1920/zoom),height:Math.round(1080/zoom),deviceScaleFactor:zoom,mobile:false});
+      this.editorZoom=zoom;this.appliedEditorZoom=zoom;
+      await this.page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+    }
+    await this.page.evaluate(({scale,margin,zoom})=>{studio.minScale=scale;studio.editorZoom=zoom;studio.subtitleMargin=margin/zoom;studio.ensureReadable();},{scale:minScale,margin,zoom});
   }
   async checkpoint() {
     await this.page.keyboard.press('Escape');
@@ -108,7 +135,7 @@ export class EditorController {
         const input=Object.entries(t.blocks.getBlock(b.parent)?.inputs||{}).find(([,v])=>v.block===b.id)?.[0];
         return input?[{target:t.getName(),id:b.id,parent:b.parent,input}]:[];
       })));
-    return {version:1,editorVersion:'15.1.1',view,tab:this.activeTab,minScale:this.minScale,subtitleMargin:this.subtitleMargin,position:this.position,
+    return {version:1,editorVersion:'15.1.1',view,tab:this.activeTab,minScale:this.minScale,subtitleMargin:this.subtitleMargin,editorZoom:this.editorZoom,position:this.position,
       reporters,
       maps:Object.fromEntries(['aliases','procedures','variableRefs','broadcastNames','callArgs'].map(k=>[k,[...(this[k]||new Map())]]))};
   }
@@ -132,7 +159,7 @@ export class EditorController {
       const target=key.slice(0,key.indexOf('\0')),restored=reporterIds.get(`${target}\0${id}`);
       if(restored)this.aliases.set(key,restored);
     }
-    await this.configureView({minScale:state.minScale,subtitleMargin:state.subtitleMargin??this.subtitleMargin});
+    await this.configureView({minScale:state.minScale,subtitleMargin:state.subtitleMargin??this.subtitleMargin,editorZoom:state.editorZoom??1});
     if(state.view.category)await this.category(state.view.category);
     await this.page.evaluate(v=>{const w=studio.workspace;w.setScale(v.scale);w.scroll(v.x,v.y);const f=w.getFlyout().getWorkspace();f.scroll(f.scrollX,v.flyoutY);},state.view);
     await this.selectTab(state.tab||'code');
@@ -528,9 +555,13 @@ export class EditorController {
     },id,{polling:'raf',timeout:5000});
   }
   async hideCursor() {if(this.page&&!this.page.isClosed())await this.page.evaluate(()=>studio.hideCursor());}
+  async settleCursor(keepStage=false) {
+    if(this.page&&!this.page.isClosed())await this.page.evaluate(keep=>{if(!keep||!studio.cursorOnStage())studio.hideCursor();},keepStage);
+  }
   async execute(a) {
-    try{return await this.performAction(a);}
-    finally{await this.hideCursor();}
+    let success=false;
+    try{const result=await this.performAction(a);success=true;return result;}
+    finally{await this.settleCursor(success&&(stageCursorActions.has(a.type)||/^(mouse\.|keyboard\.)/.test(a.type)));}
   }
   async performAction(a) {
     if(PAINT_OPERATIONS.includes(a.type))return runPaintAction(this,a);
@@ -549,8 +580,8 @@ export class EditorController {
       case 'block.move':return this.moveBlock(a.block,a.place);
       case 'block.delete': {const id=this.resolve(a.block);await this.ensureVisible(id);await this.page.evaluate(id=>studio.workspace.getBlockById(id).select(),id);await this.page.keyboard.press('Delete');return;}
       case 'category.select':return this.category(a.category);
-      case 'mouse.move':return this.move(a.x,a.y,a.duration);
-      case 'mouse.click':await this.move(a.x,a.y);return this.page.mouse.click(a.x,a.y,{button:a.button||'left'});
+      case 'mouse.move':return this.move(a.x/this.editorZoom,a.y/this.editorZoom,a.duration);
+      case 'mouse.click':await this.move(a.x/this.editorZoom,a.y/this.editorZoom);return this.page.mouse.click(this.position.x,this.position.y,{button:a.button||'left'});
       case 'mouse.down':return this.page.mouse.down();
       case 'mouse.up':return this.page.mouse.up();
       case 'mouse.wheel':return this.page.mouse.wheel(a.dx||0,a.dy||0);
