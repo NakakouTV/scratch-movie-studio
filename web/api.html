@@ -74,6 +74,9 @@ POST /sessions/{id}/actions
 <tr><td>block.input</td><td>block、input、value</td></tr>
 <tr><td>block.field</td><td>block、field、value、必要に応じて input</td></tr>
 <tr><td>block.delete</td><td>block</td></tr>
+<tr><td>view.focus</td><td>subject: {kind: block / definition / input / variableScope / variableName / costumeName / dialog / stage / monitor、block、input、field、scale、editorZoom、move: if-needed / center、minTextPx}。説明対象の構図。</td></tr>
+<tr><td>state.assert</td><td>checks: 状態検証の配列。variables / lists / costumesのnames（既定完全一致）、variable / list / blockのexists等を確認。失敗時は停止。</td></tr>
+<tr><td>presentation.hold</td><td>ms、mode: live / freeze。liveは動作を観察。freezeは録画映像を保持し収録音を消音。Scratch内部の実行は進みます。freezeは録画中のみ。</td></tr>
 <tr><td>view.configure</td><td>minScale: 0.3〜1.5（初期値0.8）、editorZoom: 1〜1.75（初期値1。メニュー・タブ・ステージ全体の拡大）、subtitleMargin: 0〜400pxの整数（初期値220、0で無効）</td></tr>
 <tr><td>workspace.focus / workspace.zoom</td><td>block / scale</td></tr>
 <tr><td>mouse.move / mouse.click</td><td>x、y（画面座標）、duration / button</td></tr>
@@ -81,6 +84,27 @@ POST /sessions/{id}/actions
 <tr><td>keyboard.type / keyboard.press</td><td>text、replace / key（例: Enter、Control+A）</td></tr>
 <tr><td>project.start / project.stop / wait</td><td>待機時 ms</td></tr>
 </tbody></table>
+<h2>説明の節目と音声の目印</h2>
+<p>独立カットの <code>POST /cuts</code> では、従来のactionsの代わりに <code>beats</code> を指定し、文ごとの開始状態・終了状態、構図、確認時間を設定できます。音声側で確定した目印の時刻を渡し、操作途中の <code>cues</code> へ結び付けます。時刻は前余白を含む完成動画の先頭からのミリ秒です。音声認識や音声のミックスは行いません。</p>
+<pre>{
+  "projectId":"読み込んだID",
+  "narration":{"markers":[{"id":"four","text":"4にします","atMs":8000}]},
+  "beats":[{
+    "id":"number","text":"値を4にします",
+    "actions":[{
+      "type":"block.input","block":"move","input":"STEPS","value":"4",
+      "cues":{
+        "target.visible":{"framing":{"kind":"input","block":"move","input":"STEPS","scale":1.2},"holdMs":350},
+        "value.before":{"at":"four"},
+        "value.entered":{"holdMs":600,"mode":"freeze"}
+      }
+    }],
+    "afterMs":600
+  }]
+}</pre>
+<p>この例は既に配置されているmoveの入力欄を映し、8秒の目印で入力を開始し、入力した4を600ms保持します。変数作成では <code>name.entered / scope.selected / created</code> などの節目に確認時間を置けます。目印に遅れた場合は既定で停止し、実測時刻を記録します。cuesは独立カット専用です。</p>
+<p><code>timing: {move,drag,type,pan,pause}</code> は操作別の時間（ms）です。カット全体・beat・操作の順に上書きできます。構図の <code>move: "if-needed"</code> は対象が見えていれば移動を抑えます。成果物の <code>timeline.json / timeline.csv</code> に操作・目印・保持・構図の時刻、<code>quality.json</code> に字幕領域との重なりなどの参考チェックを保存します。CSVは編集用の参照資料で、YMM4のプロジェクト形式ではありません。</p>
+<p>詳しい設定例・節目・状態検証の一覧はリポジトリの <code>docs/presentation.md</code> を参照してください。画面の「説明の節目・音声の目印」から変数作成やコスチューム名比較の設定を生成できます。</p>
 <h2>構造と元のブロックID</h2>
 <p><code>GET /projects/{id}/structure</code> は読み込み元のsb3を返す参照APIです。<code>version: 1</code>、<code>idScope: "target"</code>、<code>extensions</code>、<code>targets</code> を返します。編集中の状態は下記の状態APIから取得してください。</p>
 <p>各対象には <code>name / isStage / selectAction</code>、スクリプトの入口 <code>scripts</code>、全ブロック <code>blocks</code>、定義と呼び出しの関係 <code>procedures</code>、<code>variables / lists / broadcasts / costumes / sounds</code> が含まれます。ブロックには元の <code>id / opcode / category / parent / next / fields / inputs / mutation</code> が含まれます。入力値は <code>kind: block / literal / reference</code> で区別し、上書きされて隠れた既定値も <code>fallback</code> に保持します。変数参照はID・所有対象・global/localを区別します。</p>

@@ -4,6 +4,8 @@ Scratch Foundationの公式エディタ **@scratch/scratch-gui 15.1.1** をロ�
 
 外部のAIエージェントから利用する場合は、まず [エージェント向け利用手順](docs/agent-guide.md) を読んでください。方式の選び方、HTTPでのカット生成例、ID・座標・再試行の注意点をまとめています。
 
+台本に合わせた撮影は[説明の節目と音声の目印](docs/presentation.md)を参照してください。文の区切り、操作途中の確認、言葉の時刻との同期、対象別の構図、状態検証、静止保持、編集用の時刻記録に対応しています。
+
 ## 起動
 
 GitHubから取得した場合は、最初に `npm ci` と `npm run setup` を実行してください。Node.js、Google Chrome、FFmpegが必要です。セットアップ後は次の手順で起動します。
@@ -162,6 +164,9 @@ APIはlocalhost限定です。同時に複数の命令で同じエディタを�
 - `node tests/board-actions.mjs` クローン盤面のクリック・リスト・条件待機・MP4・中止の検証
 - `node tests/monitor-actions.mjs` モニター表示・配置・サイズ・スクロール・保存・MP4の検証
 - `node tests/documentation.mjs` エージェント向け文書のNode.js例を実行し、読み込み・カット生成・MP4取得、文書リンク、API操作一覧を検証
+- `node --test tests/presentation.test.mjs` 音声目印・節目・カット設定の検証と撮り直しの互換性
+- `node tests/presentation.mjs` ダイアログ途中の確認、入力の時刻同期、状態検証、タイムラインとMP4、撮り直し
+- `node tests/freeze-recording.mjs` 実行が進む画面の静止保持と収録音の消音・解除を検証
 
 作画・盤面・モニターと文書例のテストは検証用サーバーを自動起動し、出力を`test-results/`に保存します。盤面・モニターの小さなsb3は`tests/fixtures/board-demo.mjs`から生成するため、利用者の作品は不要です。Chrome・FFmpegが必要です。
 

@@ -12,6 +12,7 @@ import {normalizeScenes} from './scenes.mjs';
 import {CutRunner,normalizeCut} from './cuts.mjs';
 import {DEMO_OPERATIONS} from './demo-actions.mjs';
 import {PAINT_OPERATIONS} from './paint-actions.mjs';
+import {PHASES} from './presentation-schema.mjs';
 
 export const OPERATIONS=[...DEMO_OPERATIONS,...PAINT_OPERATIONS,'tab.select','costume.add','costume.select','sound.add','target.select','category.select','variable.create','procedure.create','broadcast.create','block.add','block.input','block.field','block.move','block.delete','workspace.zoom','view.configure','workspace.focus','mouse.move','mouse.click','mouse.down','mouse.up','mouse.wheel','keyboard.type','keyboard.press','project.start','project.stop','wait'];
 export async function apiRouter(root,baseURL) {
@@ -36,7 +37,7 @@ export async function apiRouter(root,baseURL) {
     const directory=cuts.directory(job.id),recipe=JSON.parse(await fs.readFile(path.join(directory,'cut.json'),'utf8'));
     res.status(202).json(await startCut(await fs.readFile(path.join(directory,'source.sb3')),{...recipe,...req.body},job.id));
   }));
-  router.get('/capabilities',(req,res)=>res.json({version:'0.3.0',editorVersion:'15.1.1',operations:OPERATIONS,extensions:['pen'],video:{width:1920,height:1080,fps:30,format:'mp4'},unsupported:['bitmap/freehand paint automation','sound waveform editing','cloud sync','hardware extensions'],note:'背景・コスチューム・音は公式のアップロード操作で追加します。スプライト自体は撮影前に準備します。'}));
+  router.get('/capabilities',(req,res)=>res.json({version:'0.4.0',editorVersion:'15.1.1',operations:OPERATIONS,presentation:{phases:PHASES,markerClock:'video-start-ms',holdModes:['live','freeze'],exports:['timeline.json','timeline.csv','quality.json']},extensions:['pen'],video:{width:1920,height:1080,fps:30,format:'mp4'},unsupported:['bitmap/freehand paint automation','sound waveform editing','cloud sync','hardware extensions'],note:'背景・コスチューム・音は公式のアップロード操作で追加します。スプライト自体は撮影前に準備します。'}));
   router.get('/samples',asyncRoute(async(req,res)=>res.json((await fs.readdir(root)).filter(n=>n.endsWith('.sb3')))));
   async function addProject(buffer,name) {
     const {project:json}=await readSb3(buffer);const plan=buildPlan(json,{assets:true}),id=randomUUID();
@@ -67,6 +68,7 @@ export async function apiRouter(root,baseURL) {
     const s=session(req.params.id);if(s.busy)throw new Error('このセッションは操作中です。');
     const actions=Array.isArray(req.body)?req.body:[req.body];
     if(actions.length>10000)throw new Error('操作数が多すぎます。');
+    if(actions.some(a=>a.cues))throw new Error('音声同期・操作途中のcuesは独立カットへ指定してください。');
     s.busy=true;
     try {
       const results=[];
@@ -88,14 +90,15 @@ export async function apiRouter(root,baseURL) {
     const s=session(req.params.id);if(s.recorder)throw new Error('録画中です。');
     await runProcess(process.env.FFMPEG_PATH||'ffmpeg',['-version']);
     s.recorder=new Recorder(s.controller.page,s.directory);
-    try{await s.recorder.start();}catch(e){s.recorder=null;throw e;}
+    s.controller.recorder=s.recorder;
+    try{await s.recorder.start();}catch(e){s.recorder=null;s.controller.recorder=null;throw e;}
     res.json({recording:true});
   }));
   router.post('/sessions/:id/recording/stop',asyncRoute(async(req,res)=>{
     const s=session(req.params.id);if(!s.recorder)throw new Error('録画が開始されていません。');
     try{await s.recorder.stop();await s.recorder.encode();}
     catch(e){await s.recorder.abort();throw e;}
-    finally{s.recorder=null;}
+    finally{s.recorder=null;s.controller.recorder=null;}
     await fs.writeFile(path.join(s.directory,'actions.json'),JSON.stringify(s.log,null,2));res.json({url:`/outputs/${s.id}/movie.mp4`});
   }));
   router.delete('/sessions/:id',asyncRoute(async(req,res)=>{

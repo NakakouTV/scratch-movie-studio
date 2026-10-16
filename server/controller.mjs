@@ -1,5 +1,6 @@
 import {chromium} from 'playwright';
 import fs from 'node:fs/promises';
+import {focusSubject,assertState,presentationHold} from './presentation.mjs';
 import {DEMO_OPERATIONS,runDemoAction} from './demo-actions.mjs';
 import {PAINT_OPERATIONS,runPaintAction} from './paint-actions.mjs';
 import {boardConfiguration} from './board-actions.mjs';
@@ -8,7 +9,7 @@ import {readSb3,EMPTY_COSTUME} from './project.mjs';
 const categories={event:'events',control:'control',motion:'motion',looks:'looks',sound:'sound',sensing:'sensing',operator:'operators',data:'variables',procedures:'myBlocks',pen:'pen'};
 // Game pointer actions and waits retain the visible cursor over the stage.
 // Editing actions and failures still hide it so it cannot cover new content.
-const stageCursorActions=new Set(['board.click','sprite.drag','wait','runtime.wait','variable.set','list.set','list.replace','list.get','board.configure']);
+const stageCursorActions=new Set(['board.click','sprite.drag','wait','runtime.wait','variable.set','list.set','list.replace','list.get','board.configure','state.assert','presentation.hold']);
 export function subtitleMargin(value=220){
   if(!Number.isInteger(value)||value<0||value>400)throw new Error('字幕用の余白は0〜400pxの整数です。');
   return value;
@@ -59,6 +60,7 @@ export class EditorController {
     for(let i=1;i<=steps;i++) {
       const t=i/steps,e=t*t*(3-2*t);
       await this.page.mouse.move(start.x+(x-start.x)*e,start.y+(y-start.y)*e);
+      if(this.dragCapture)this.options.onDragSample?.({time:Date.now(),x:start.x+(x-start.x)*e,y:start.y+(y-start.y)*e});
       if(ms>0) await this.pause(ms/steps);
     }
     this.position={x,y};
@@ -179,7 +181,7 @@ export class EditorController {
         input.sourceName=index<0?input.name:args.originalArgs[index];
       }
     }
-    state.board=this.board?{...this.board}:boardConfiguration();return state;
+    state.board=this.board?{...this.board}:boardConfiguration();state.presentation=this.presentation?{beat:this.presentation.beat?.id??null,text:this.presentation.beat?.text??'',phase:this.presentation.phaseName??null,atMs:this.presentation.now()}:null;return state;
   }
   async setAssetSource(buffer) {this.assetSource=await readSb3(buffer);}
   async selectTab(tab) {
@@ -265,9 +267,12 @@ export class EditorController {
     await this.category('variables');
     await this.click(this.page.locator('.blocklyFlyoutButton').filter({hasText:a.kind==='list'?'リストを作る':'変数を作る'}));
     const input=this.page.locator('[class*="prompt_variable-name-text-input"]');
-    await this.click(input);await this.type(a.name);
-    if(a.scope==='local') await this.click(this.page.locator('input[name="variableScopeOption"][value="local"]'));
-    await this.click(this.page.getByRole('button',{name:'OK',exact:true}));
+    await input.waitFor({state:'visible'});await this.phase('dialog.opened');
+    await this.click(input);await this.phase('name.before');await this.type(a.name);
+    await this.phase('name.entered');
+    await this.phase('scope.before');if(a.scope==='local') await this.click(this.page.locator('input[name="variableScopeOption"][value="local"]'));
+    await this.phase('scope.selected');
+    await this.phase('create.before');await this.click(this.page.getByRole('button',{name:'OK',exact:true}));
     const id=await this.page.evaluate(({name,scope,kind,value})=>{
       const t=scope==='local'?studio.vm.editingTarget:studio.vm.runtime.getTargetForStage();
       const v=Object.values(t.variables).find(v=>v.name===name&&v.type===(kind==='list'?'list':''));
@@ -290,12 +295,14 @@ export class EditorController {
       await this.pause(80);
     }
     if(a.sourceId) {this.aliases.set(this.key(a.sourceId),id);this.variableRefs.set(a.sourceId,id);}
+    await this.phase('created');
     return {id};
   }
   async createProcedure(a) {
     await this.category('myBlocks');
     await this.click(this.page.locator('.blocklyFlyoutButton').filter({hasText:'ブロックを作る'}));
     await this.page.waitForFunction(()=>!!studio.procedureDialog);
+    await this.phase('dialog.opened');
     const chunks=a.mutation.proccode.split(/(%[sb])/g),names=JSON.parse(a.mutation.argumentnames||'[]');
     if(!chunks[0].trim()) {await this.type('');await this.page.keyboard.press('Enter');}
     let arg=0,hasLabel=false;
@@ -309,6 +316,7 @@ export class EditorController {
       }
     }
     if(String(a.mutation.warp)==='true') await this.click(this.page.locator('[class*="custom-procedures_checkbox-row"] input'));
+    await this.phase('definition.configured');
     const before=await this.page.evaluate(()=>studio.workspace.getTopBlocks(false).map(b=>b.id));
     await this.click(this.page.getByRole('button',{name:'OK',exact:true}));
     await this.pause(300);
@@ -325,6 +333,7 @@ export class EditorController {
     this.procedures.set(this.key(def.proccode),{...def,originalArgs:JSON.parse(a.mutation.argumentids||'[]')});
     // Official creation leaves the definition attached to the mouse.
     await this.placeCreatedDefinition(def.id,a.x||80,a.y||80);
+    await this.phase('created');
     return def;
   }
   async placeCreatedDefinition(id,x,y) {
@@ -337,7 +346,7 @@ export class EditorController {
   }
   async ensureVisible(id,input,fieldName) {
     await this.selectTab('code');
-    await this.page.evaluate(({id,input,fieldName,duration})=>studio.reveal(id,input,fieldName,duration),{id,input,fieldName,duration:this.timing.move});
+    await this.page.evaluate(({id,input,fieldName,duration})=>studio.reveal(id,input,fieldName,duration),{id,input,fieldName,duration:this.timing.pan??this.timing.move});
     await this.pause(120);
   }
   mappedInput(id,input) {
@@ -372,14 +381,17 @@ export class EditorController {
     if(a.field==='BROADCAST_OPTION'&&a.value===undefined)a={...a,value:this.broadcastNames.get(a.referenceId)};
     const id=this.resolve(a.block),input=a.input?this.mappedInput(a.block,a.input):undefined;
     await this.ensureVisible(id,input,a.field);
-    const f=await this.page.evaluate(({id,input,name})=>studio.fieldInfo(id,input,name),{id,input,name:a.field});
+    let f=await this.page.evaluate(({id,input,name})=>studio.fieldInfo(id,input,name),{id,input,name:a.field});
+    await this.phase('target.visible');
+    if(this.options.onPhase)f=await this.page.evaluate(({id,input,name})=>studio.fieldInfo(id,input,name),{id,input,name:a.field});
     const expected=this.variableRefs.get(a.referenceId)||a.value;
     if(String(f.value)===String(expected)||(!a.referenceId&&['VARIABLE','LIST','VALUE'].includes(a.field)&&f.text===String(a.value))) return {unchanged:true};
     if(f.editable===false) throw new Error(`このフィールドは入力できません: ${a.field}`);
     if(f.kind==='unsupported')throw new Error(`このフィールドの操作形式には未対応です: ${a.field}`);
     if(f.kind==='colour'&&!/^#[\da-f]{6}$/i.test(String(a.value)))throw new Error('色は #rrggbb 形式で指定してください。');
     await this.clickBox(f.box);
-    if(f.kind==='colour')return this.colour(id,input,a.field,String(a.value));
+    await this.phase('field.opened');
+    if(f.kind==='colour'){await this.phase('value.before');const result=await this.colour(id,input,a.field,String(a.value));await this.phase('value.committed');return result;}
     if(f.kind==='menu') {
       const option=f.options.find(o=>String(o.value)===String(expected))||f.options.find(o=>String(o.label)===String(a.value));
       if(!option&&a.field==='BROADCAST_OPTION'){
@@ -395,16 +407,19 @@ export class EditorController {
       if(!option) throw new Error(`選択肢がありません: ${a.field}=${a.value}`);
       const items=this.page.locator('.blocklyMenuItem').filter({hasText:new RegExp(`^${escapeRegExp(option.label)}$`)});
       const matchIndex=f.options.filter(o=>o.label===option.label).indexOf(option);
+      await this.phase('value.before');
       await this.click(items.nth(Math.max(0,matchIndex)));
+      await this.phase('option.selected');
       const selected=await this.page.evaluate(({id,input,name})=>studio.field(id,input,name).getValue(),{id,input,name:a.field});
       if(String(selected)!==String(option.value))throw new Error(`選択結果が一致しません: ${a.field}`);
       if(a.field==='BROADCAST_OPTION'&&a.referenceId)this.variableRefs.set(a.referenceId,option.value);
     } else {
       const editor=this.page.locator('input.blocklyHtmlInput:visible');
-      await editor.waitFor();await this.click(editor);await this.type(a.value);await this.page.keyboard.press('Enter');await this.pause(80);
+      await editor.waitFor();await this.click(editor);await this.phase('value.before');await this.type(a.value);await this.phase('value.entered');await this.page.keyboard.press('Enter');await this.pause(80);
       const value=await this.page.evaluate(({id,input,name})=>studio.field(id,input,name).getValue(),{id,input,name:a.field});
       if(String(value)!==String(a.value))throw new Error(`入力が一致しません: ${a.value} → ${value}`);
     }
+    await this.phase('value.committed');
     return {value:a.value};
   }
   async addBlock(a) {
@@ -449,7 +464,7 @@ export class EditorController {
   }
   async dragNew(a,source) {
     const p={...(a.place||{x:120,y:120})};if(p.after)p.after=this.resolve(p.after);if(p.parent){p.input=this.mappedInput(p.parent,p.input);p.parent=this.resolve(p.parent);}
-    if(source.flyout)await this.page.evaluate(({p,duration})=>studio.revealDestination(p,duration),{p,duration:this.timing.move});
+    if(source.flyout)await this.page.evaluate(({p,duration})=>studio.revealDestination(p,duration),{p,duration:this.timing.pan??this.timing.move});
     else await this.ensureVisible(source.id);
     source=await this.prepareSource(source.id,!!source.flyout);
     const before=await this.page.evaluate(()=>studio.workspace.getAllBlocks(false).map(b=>b.id));
@@ -462,6 +477,7 @@ export class EditorController {
     await this.waitForDrop(id);
     if(a.sourceId)this.aliases.set(this.key(a.sourceId),id);
     await this.verifyConnection(id,a.place);
+    await this.phase('drop.completed');
     return {id};
   }
   async prepareSource(id,flyout) {
@@ -490,14 +506,16 @@ export class EditorController {
     try {
       await this.page.evaluate(source=>{studio.dragMotion=createStudioDragMotion(studio,source);},spec.source);
       await this.page.mouse.down();
+      this.dragCapture=true;
       await move();
+      await this.phase('drop.before');
       await this.page.evaluate(()=>studio.targetedDrag.prepareDrop());
     }catch(error){
       await this.page.evaluate(()=>studio.targetedDrag?.cancel()).catch(()=>{});
       throw error;
     }finally{
       try{await this.page.mouse.up();}
-      finally{await this.page.evaluate(()=>{studio.dragMotion?.restore();studio.dragMotion=null;studio.endTargetedDrag();});}
+      finally{this.dragCapture=false;await this.page.evaluate(()=>{studio.dragMotion?.restore();studio.dragMotion=null;studio.endTargetedDrag();});}
     }
   }
   async moveHeldBlock(place,source) {
@@ -542,7 +560,7 @@ export class EditorController {
     await this.ensureVisible(id);
     const source=await this.prepareSource(id,false);
     await this.dragWithSnap({sourceId:id,blockId:id,source},place,()=>this.moveHeldBlock(place,source));
-    await this.waitForDrop(id);await this.verifyConnection(id,place);return {id};
+    await this.waitForDrop(id);await this.verifyConnection(id,place);await this.phase('drop.completed');return {id};
   }
   async waitForDrop(id) {
     // Blockly flushes its events to the VM asynchronously. Continue when the
@@ -558,12 +576,16 @@ export class EditorController {
   async settleCursor(keepStage=false) {
     if(this.page&&!this.page.isClosed())await this.page.evaluate(keep=>{if(!keep||!studio.cursorOnStage())studio.hideCursor();},keepStage);
   }
+  async phase(name){await this.options.onPhase?.(name);}
   async execute(a) {
-    let success=false;
-    try{const result=await this.performAction(a);success=true;return result;}
-    finally{await this.settleCursor(success&&(stageCursorActions.has(a.type)||/^(mouse\.|keyboard\.)/.test(a.type)));}
+    let success=false;const outer=!this.executionDepth;this.executionDepth=(this.executionDepth??0)+1;
+    try{if(outer)await this.phase('before');const result=await this.performAction(a);if(outer&&this.options.onPhase){await this.settleCursor(stageCursorActions.has(a.type)||/^(mouse\.|keyboard\.)/.test(a.type));await this.phase('after');}success=true;return result;}
+    finally{this.executionDepth--;await this.settleCursor(success&&(stageCursorActions.has(a.type)||/^(mouse\.|keyboard\.)/.test(a.type)));}
   }
   async performAction(a) {
+    if(a.type==='view.focus')return focusSubject(this,a.subject??a);
+    if(a.type==='state.assert')return assertState(this,a.checks);
+    if(a.type==='presentation.hold')return presentationHold(this,a);
     if(PAINT_OPERATIONS.includes(a.type))return runPaintAction(this,a);
     if(DEMO_OPERATIONS.includes(a.type))return runDemoAction(this,a);
     switch(a.type) {

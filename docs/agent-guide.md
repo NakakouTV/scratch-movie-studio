@@ -110,6 +110,7 @@ setupは録画外、actionsは録画する操作です。framing / endFramingは
 - [コスチューム作画](paint.md)
 - [盤面クリック・リスト・条件待機](board.md)
 - [変数・リストのモニター](monitors.md)
+- [説明の節目・音声目印・構図・編集用の記録](presentation.md)。beatsとcuesを指定し、操作直前の目印・途中の確認時間・状態検証を組み合わせます。音声の単語時刻は外部で確定したJSONを渡します。
 
 ## 個別セッション
 

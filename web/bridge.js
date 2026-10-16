@@ -120,6 +120,7 @@
   installStudioPaint(studio);
   installStudioRuntimeData(studio);
   installStudioMonitors(studio);
+  installStudioPresentation(studio);
   const init = setInterval(() => {
     if (!studio.store) return;
     studio.store.dispatch({type:'scratch-gui/locales/SELECT_LOCALE',locale:'ja'});

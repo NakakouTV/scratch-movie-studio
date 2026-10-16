@@ -10,6 +10,10 @@ $('source').onchange=async e=>{try{
   project=await api('/projects',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name)},body:file});
   project.plan=await api(`/projects/${project.id}/cut-plan`);
   const structure=await api(`/projects/${project.id}/structure`);
+  project.structure=structure;
+  $('presentationTarget').replaceChildren(...structure.targets.map(t=>new Option(t.name,t.name)));
+  $('presentationTarget').value=structure.targets.find(t=>!t.isStage)?.name??structure.targets[0].name;$('presentationTarget').disabled=false;$('presentationSample').disabled=false;
+  $('comparisonSample').disabled=(structure.targets.find(t=>t.name===$('presentationTarget').value)?.costumes.length??0)<2;
   const boardTarget=structure.targets.find(t=>!t.isStage&&t.blocks.some(b=>b.opcode==='control_start_as_clone'))??structure.targets.find(t=>!t.isStage);
   const boardLists=structure.targets.flatMap(t=>t.lists.map(v=>({...v,target:t.name}))),boardList=boardLists.find(v=>v.scope==='global'&&v.name==='マスの状態')??boardLists.find(v=>v.scope==='global')??boardLists[0];
   project.boardExample=boardTarget&&boardList?{target:boardTarget.name,clones:boardTarget.blocks.some(b=>b.opcode==='control_start_as_clone'),list:{name:boardList.name,id:boardList.id,scope:boardList.scope,target:boardList.target}}:null;
@@ -53,13 +57,24 @@ $('monitorSample').onclick=()=>{try{
  const actions=[{type:'monitor.show',...ref},{type:'monitor.layout',...ref,x:12,y:50,...(ref.kind==='list'?{width:180,height:220}:{mode:'default'})},...(ref.kind==='list'?[{type:'monitor.scroll',...ref,index,align:'center',duration:600}]:[]),{type:'wait',ms:1000}];
  $('recipe').value=JSON.stringify({start:'project',setup,actions},null,2);
 }catch(e){error(e);}};
+$('presentationTarget').onchange=()=>{$('comparisonSample').disabled=(project?.structure.targets.find(t=>t.name===$('presentationTarget').value)?.costumes.length??0)<2;};
+$('presentationSample').onclick=()=>{try{
+ clear();const t=project.structure.targets.find(t=>t.name===$('presentationTarget').value),name=$('presentationName').value.trim();if(!name)throw new Error('変数名を入力してください。');const scope=t.isStage?'global':'local';$('title').value='説明の節目・'+name;
+ $('recipe').value=JSON.stringify({start:'blank',setupSpeed:10,setup:[t.selectAction],narration:{markers:[{id:'four',atMs:15000,text:'4にします'}]},sync:{late:'error',toleranceMs:120},timing:{move:250,drag:600,type:75,pan:200,pause:80},beats:[
+  {id:'create',text:name+'という変数を作ります',before:[{type:'variables',scope,target:t.name,names:[]}],beforeMs:300,actions:[{type:'variable.create',name,scope,monitor:{visible:false},cues:{'dialog.opened':{holdMs:300},'name.entered':{framing:{kind:'variableName'},holdMs:500},'scope.selected':{framing:{kind:t.isStage?'dialog':'variableScope',editorZoom:1.5},holdMs:800}}}],after:[{type:'variables',scope,target:t.name,names:[name]}],afterMs:600},
+  {id:'number',text:'値を4にします',actions:[{type:'block.add',sourceId:'explain-value',opcode:t.isStage?'control_wait':'motion_movesteps',place:{x:250,y:220}},{type:'block.input',block:'explain-value',input:t.isStage?'DURATION':'STEPS',value:'4',cues:{'target.visible':{framing:{kind:'input',block:'explain-value',input:t.isStage?'DURATION':'STEPS',scale:1.2}},'value.before':{at:'four'},'value.entered':{holdMs:500,mode:'freeze'}}}],afterMs:600}
+ ]},null,2);
+}catch(e){error(e);}};
+$('comparisonSample').onclick=()=>{const t=project.structure.targets.find(t=>t.name===$('presentationTarget').value);if(t.costumes.length<2)return;clear();$('title').value='コスチューム名の比較';$('recipe').value=JSON.stringify({start:'project',setup:[t.selectAction],beats:t.costumes.slice(0,2).map((c,i)=>({id:'name-'+i,text:c.name,actions:[{type:'costume.select',index:i},{type:'view.focus',subject:{kind:'costumeName',editorZoom:1.5}}],afterMs:1000,mode:'freeze'}))},null,2);};
+$('markerFile').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>2*1024*1024)throw new Error('目印JSONは2MB以下です。');const raw=JSON.parse(await file.text()),markers=Array.isArray(raw)?raw:raw.markers;if(!Array.isArray(markers)||markers.some(m=>typeof m.id!=='string'||!Number.isFinite(m.atMs)||m.atMs<0))throw new Error('idとatMsを持つ目印の配列を指定してください。');const recipe=JSON.parse($('recipe').value);recipe.narration={...recipe.narration,markers};$('recipe').value=JSON.stringify(recipe,null,2);clear();$('status').textContent=`音声の目印を${markers.length}件取り込みました。`;}catch(e){error(e);}};
 async function history(){const jobs=(await api('/jobs')).filter(j=>j.kind==='cut');const selected=$('history').value;$('history').replaceChildren(...jobs.map(j=>new Option(`${j.name} · ${j.status} · ${new Date(j.startedAt).toLocaleString('ja-JP')}`,j.id)));if(jobs.some(j=>j.id===selected))$('history').value=selected;return jobs;}
 async function poll(){try{
   const j=await api('/jobs/'+current),active=['running','encoding'].includes(j.status);
   $('status').textContent=`${j.name} · ${j.current}\n${j.step} / ${j.total} 操作`;$('cancel').hidden=!active;$('render').disabled=active||!project;$('retake').disabled=active;
   if(!active){clearInterval(timer);if(j.error)error(new Error(j.error));$('links').replaceChildren(...j.artifacts.map(a=>{const link=document.createElement('a');link.href=a.url;link.textContent=a.name;link.download=a.name;return link;}));const movie=j.artifacts.find(a=>a.name==='movie.mp4');if(movie){$('movie').poster=j.artifacts.find(a=>a.name==='start.jpg')?.url||'';$('movie').src=movie.url;$('movie').hidden=false;}await history();$('history').value=current;}
+  if(!active){const timeline=j.artifacts.find(a=>a.name==='timeline.json');if(timeline){const data=await (await fetch(timeline.url)).json();$('timingReport').textContent=[...data.events.filter(e=>['beat-start','marker','hold-start','beat-end'].includes(e.type)).map(e=>`${(e.atMs/1000).toFixed(2)}秒 / ${e.frame}f · ${e.beat??''} ${e.text??''} · ${e.type}${e.marker?' '+e.marker:''}${e.lateMs!==undefined?' 遅れ'+Math.round(e.lateMs)+'ms':''}`),...data.warnings.map(w=>'確認: '+JSON.stringify(w))].join('\n');$('timingDetails').hidden=false;}}
 }catch(e){clearInterval(timer);error(e);}}
-async function watch(id){current=id;clearInterval(timer);$('movie').hidden=true;$('links').replaceChildren();timer=setInterval(poll,1000);await poll();}
+async function watch(id){current=id;clearInterval(timer);$('movie').hidden=true;$('timingDetails').hidden=true;$('links').replaceChildren();timer=setInterval(poll,1000);await poll();}
 $('cancel').onclick=async()=>{try{await api(`/jobs/${current}/cancel`,json({}));}catch(e){error(e);}};
 $('open').onclick=async()=>{if($('history').value){clear();await watch($('history').value);}};
 $('retake').onclick=async()=>{try{clear();if(!$('history').value)throw new Error('撮り直すカットを選択してください。');await watch((await api(`/cuts/${$('history').value}/retake`,json({}))).id);}catch(e){error(e);}};

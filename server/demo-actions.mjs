@@ -1,7 +1,8 @@
 import {BOARD_OPERATIONS,runBoardAction} from './board-actions.mjs';
 import {MONITOR_OPERATIONS,runMonitorAction} from './monitor-actions.mjs';
+import {PRESENTATION_OPERATIONS} from './presentation.mjs';
 // Runtime demonstrations use named targets/variables and native pointer actions.
-export const DEMO_OPERATIONS=[...BOARD_OPERATIONS,...MONITOR_OPERATIONS,'variable.set','script.run','sprite.drag','stage.view'];
+export const DEMO_OPERATIONS=[...BOARD_OPERATIONS,...MONITOR_OPERATIONS,...PRESENTATION_OPERATIONS,'variable.set','script.run','sprite.drag','stage.view'];
 export async function runDemoAction(c,a){
   if(BOARD_OPERATIONS.includes(a.type))return runBoardAction(c,a);
   if(MONITOR_OPERATIONS.includes(a.type))return runMonitorAction(c,a);
@@ -80,8 +81,10 @@ export async function runDemoAction(c,a){
     });
     try{
       await c.page.mouse.down();await c.page.waitForFunction(id=>studio.spriteDragProbe.started===id,point.id,{timeout:2500});
+      c.dragCapture=true;
       await c.move(point.end.x,point.end.y,duration);
     }finally{
+      c.dragCapture=false;
       try{await c.page.mouse.up();}finally{await c.page.evaluate(()=>{const p=studio.spriteDragProbe;if(p){studio.vm.startDrag=p.original;delete studio.spriteDragProbe;}});}
       c.target=await c.page.evaluate(()=>studio.vm.editingTarget.getName());
     }

@@ -38,13 +38,13 @@ export class Recorder {
         const engine=window.studio?.vm?.runtime?.audioEngine;
         if(!engine?.audioContext||!engine.inputNode)return {start:Date.now()/1000,audio:false};
         await engine.audioContext.resume();
-        const destination=engine.audioContext.createMediaStreamDestination();engine.inputNode.connect(destination);
+        const destination=engine.audioContext.createMediaStreamDestination(),captureGain=engine.audioContext.createGain();engine.inputNode.connect(captureGain);captureGain.connect(destination);
         // An inactive Scratch graph can stop delivering silent samples. Keep the
         // capture track alive so MediaRecorder does not discard leading silence.
         const silence=engine.audioContext.createConstantSource();silence.offset.value=0;silence.connect(destination);silence.start();
         const recorder=new MediaRecorder(destination.stream,{mimeType:'audio/webm;codecs=opus'}),chunks=[];
         recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
-        window.studioAudio={recorder,chunks,destination,engine,silence};
+        window.studioAudio={recorder,chunks,destination,engine,silence,captureGain};
         const start=Date.now()/1000;recorder.start(1000);return {start,audio:true};
       });
       this.origin=clock.start;this.hasAudio=clock.audio;this.started=performance.now();this.accepting=true;
@@ -56,7 +56,7 @@ export class Recorder {
         if(!Number.isFinite(time)){time=(performance.now()-this.started)/1000;this.fallbackTimestamps++;}
         time=Math.max(this.frames.at(-1).time,time,0);
         this.sampleUntil(time);
-        this.lastImage=Buffer.from(event.data,'base64');this.frames.push({time});
+        if(!this.frozen)this.lastImage=Buffer.from(event.data,'base64');this.frames.push({time});
       });
       await this.cdp.send('Page.startScreencast',{format:'jpeg',quality:90,maxWidth:1920,maxHeight:1080,everyNthFrame:1});
       if(this.error)throw this.error;
@@ -76,6 +76,12 @@ export class Recorder {
       });
     }).catch(e=>{this.error??=e;this.encoder.kill();}).finally(()=>{this.queuedBytes-=image.length;});
   }
+  async setFrozen(value){
+    if(!this.accepting)throw new Error('映像の静止には録画中のカットが必要です。');
+    if(value){this.lastImage=await this.page.screenshot({type:'jpeg',quality:90});this.frozen=true;}
+    else{this.lastImage=await this.page.screenshot({type:'jpeg',quality:90});this.frozen=false;}
+    await this.page.evaluate(v=>{const a=window.studioAudio;if(a?.captureGain){a.captureGain.gain.cancelScheduledValues(0);a.captureGain.gain.value=v?0:1;}},value);
+  }
   stop() {return this.stopping??=(this.stopRecording().catch(async e=>{await this.abort();throw e;}));}
   async stopRecording() {
     if(!this.accepting)return;
@@ -88,7 +94,7 @@ export class Recorder {
         const bytes=new Uint8Array(await new Blob(a.chunks).arrayBuffer());let binary='';
         for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
         return {end,base64:btoa(binary)};
-      }finally{a.silence.stop();a.silence.disconnect();a.engine.inputNode.disconnect(a.destination);a.destination.stream.getTracks().forEach(t=>t.stop());delete window.studioAudio;}
+      }finally{a.silence.stop();a.silence.disconnect();a.engine.inputNode.disconnect(a.captureGain);a.captureGain.disconnect();a.destination.stream.getTracks().forEach(t=>t.stop());delete window.studioAudio;}
     });
     await this.cdp.send('Page.stopScreencast');await this.cdp.detach();this.cdp=null;
     this.capturedDuration=Math.max(1/30,audio.end-this.origin,this.frames.at(-1).time);
@@ -111,7 +117,7 @@ export class Recorder {
     await this.page.evaluate(()=>{
       const a=window.studioAudio;if(!a)return;
       if(a.recorder.state!=='inactive')a.recorder.stop();
-      a.silence.stop();a.silence.disconnect();a.engine.inputNode.disconnect(a.destination);a.destination.stream.getTracks().forEach(t=>t.stop());delete window.studioAudio;
+      a.silence.stop();a.silence.disconnect();a.engine.inputNode.disconnect(a.captureGain);a.captureGain.disconnect();a.destination.stream.getTracks().forEach(t=>t.stop());delete window.studioAudio;
     }).catch(()=>{});
   }
   async encode() {
